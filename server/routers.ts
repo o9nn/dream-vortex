@@ -113,6 +113,47 @@ import {
   getScheduledWorldEventById,
   getPendingScheduledWorldEvents,
   updateScheduledWorldEvent,
+  // DreamCog storytelling functions
+  createApiKey,
+  getApiKeysByUserId,
+  getApiKeyById,
+  deleteApiKey,
+  createStoryCharacter,
+  getStoryCharactersByUserId,
+  getStoryCharacterById,
+  updateStoryCharacter,
+  deleteStoryCharacter,
+  createScenario,
+  getScenariosByUserId,
+  getPublicScenarios,
+  getScenarioById,
+  updateScenario,
+  deleteScenario,
+  addScenarioCharacter,
+  getScenarioCharacters,
+  // updateScenarioCharacter, // Not implemented yet
+  deleteScenarioCharacter,
+  addScenarioInteraction,
+  getScenarioInteractions,
+  createChatSession,
+  getChatSessionsByUserId,
+  getChatSessionById,
+  updateChatSession,
+  deleteChatSession,
+  addChatMessage,
+  getChatMessages,
+  createStory,
+  getStoriesByUserId,
+  getStoryById,
+  updateStory,
+  deleteStory,
+  addStoryCharacterLink,
+  getStoryCharacterLinks,
+  updateStoryCharacterLink,
+  deleteStoryCharacterLink,
+  createGeneratedImage,
+  getGeneratedImagesByUserId,
+  deleteGeneratedImage,
 } from "./db";
 
 // Initialize game data on server start
@@ -1554,6 +1595,264 @@ export const appRouter = router({
     state: protectedProcedure.query(async () => {
       return await getGameState();
     }),
+  }),
+
+  // ============================================================================
+  // API KEYS ROUTES (DreamCog)
+  // ============================================================================
+  apiKeys: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return await getApiKeysByUserId(ctx.user.id);
+    }),
+    create: protectedProcedure
+      .input(z.object({ keyName: z.string(), encryptedKey: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        return await createApiKey({ userId: ctx.user.id, ...input });
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await deleteApiKey(input.id, ctx.user.id);
+        return { success: true };
+      }),
+  }),
+
+  // ============================================================================
+  // CHARACTERS ROUTES (DreamCog)
+  // ============================================================================
+  characters: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return await getStoryCharactersByUserId(ctx.user.id);
+    }),
+    create: protectedProcedure
+      .input(z.object({
+        name: z.string(),
+        label: z.string(),
+        promptDescription: z.string().optional(),
+        displayDescription: z.string().optional(),
+        imageUrl: z.string().optional(),
+        isUserCharacter: z.boolean().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return await createStoryCharacter({ userId: ctx.user.id, ...input });
+      }),
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().optional(),
+        label: z.string().optional(),
+        promptDescription: z.string().optional(),
+        displayDescription: z.string().optional(),
+        imageUrl: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { id, ...data } = input;
+        await updateStoryCharacter(id, ctx.user.id, data);
+        return { success: true };
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await deleteStoryCharacter(input.id, ctx.user.id);
+        return { success: true };
+      }),
+  }),
+
+  // ============================================================================
+  // SCENARIOS ROUTES (DreamCog)
+  // ============================================================================
+  scenarios: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return await getScenariosByUserId(ctx.user.id);
+    }),
+    public: publicProcedure
+      .input(z.object({ search: z.string().optional() }).optional())
+      .query(async ({ input }) => {
+        return await getPublicScenarios(input?.search);
+      }),
+    byId: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return await getScenarioById(input.id);
+      }),
+    create: protectedProcedure
+      .input(z.object({
+        title: z.string(),
+        promptDescription: z.string().optional(),
+        displayDescription: z.string().optional(),
+        imageUrl: z.string().optional(),
+        isPublic: z.boolean().optional(),
+        worldId: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return await createScenario({ userId: ctx.user.id, ...input });
+      }),
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        title: z.string().optional(),
+        promptDescription: z.string().optional(),
+        displayDescription: z.string().optional(),
+        imageUrl: z.string().optional(),
+        isPublic: z.boolean().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { id, ...data } = input;
+        await updateScenario(id, ctx.user.id, data);
+        return { success: true };
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await deleteScenario(input.id, ctx.user.id);
+        return { success: true };
+      }),
+    characters: protectedProcedure
+      .input(z.object({ scenarioId: z.number() }))
+      .query(async ({ input }) => {
+        return await getScenarioCharacters(input.scenarioId);
+      }),
+    interactions: protectedProcedure
+      .input(z.object({ scenarioId: z.number() }))
+      .query(async ({ input }) => {
+        return await getScenarioInteractions(input.scenarioId);
+      }),
+  }),
+
+  // ============================================================================
+  // CHAT ROUTES (DreamCog)
+  // ============================================================================
+  chat: router({
+    sessions: protectedProcedure.query(async ({ ctx }) => {
+      return await getChatSessionsByUserId(ctx.user.id);
+    }),
+    sessionById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ ctx, input }) => {
+        return await getChatSessionById(input.id, ctx.user.id);
+      }),
+    createSession: protectedProcedure
+      .input(z.object({
+        title: z.string(),
+        scenarioId: z.number().optional(),
+        worldId: z.number().optional(),
+        systemPrompt: z.string().optional(),
+        modelId: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return await createChatSession({ userId: ctx.user.id, ...input });
+      }),
+    updateSession: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        title: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { id, ...data } = input;
+        await updateChatSession(id, ctx.user.id, data);
+        return { success: true };
+      }),
+    deleteSession: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await deleteChatSession(input.id, ctx.user.id);
+        return { success: true };
+      }),
+    messages: protectedProcedure
+      .input(z.object({ sessionId: z.number() }))
+      .query(async ({ input }) => {
+        return await getChatMessages(input.sessionId);
+      }),
+    addMessage: protectedProcedure
+      .input(z.object({
+        sessionId: z.number(),
+        messageType: z.enum(["message", "text", "instruction", "user", "system"]),
+        content: z.string(),
+        characterLabel: z.string().optional(),
+        characterName: z.string().optional(),
+        isSticky: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await addChatMessage(input);
+      }),
+  }),
+
+  // ============================================================================
+  // STORIES ROUTES (DreamCog)
+  // ============================================================================
+  stories: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return await getStoriesByUserId(ctx.user.id);
+    }),
+    byId: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ ctx, input }) => {
+        return await getStoryById(input.id, ctx.user.id);
+      }),
+    create: protectedProcedure
+      .input(z.object({
+        title: z.string(),
+        content: z.string().optional(),
+        worldId: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return await createStory({ userId: ctx.user.id, ...input });
+      }),
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        title: z.string().optional(),
+        content: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { id, ...data } = input;
+        await updateStory(id, ctx.user.id, data);
+        return { success: true };
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await deleteStory(input.id, ctx.user.id);
+        return { success: true };
+      }),
+    characters: protectedProcedure
+      .input(z.object({ storyId: z.number() }))
+      .query(async ({ input }) => {
+        return await getStoryCharacterLinks(input.storyId);
+      }),
+  }),
+
+  // ============================================================================
+  // IMAGE GENERATION ROUTES (DreamCog)
+  // ============================================================================
+  images: router({
+    list: protectedProcedure
+      .input(z.object({ limit: z.number().optional() }).optional())
+      .query(async ({ ctx, input }) => {
+        return await getGeneratedImagesByUserId(ctx.user.id, input?.limit);
+      }),
+    create: protectedProcedure
+      .input(z.object({
+        includePrompt: z.string(),
+        excludePrompt: z.string().optional(),
+        cfgScale: z.number().optional(),
+        fidelity: z.number().optional(),
+        aspectRatio: z.string().optional(),
+        style: z.string().optional(),
+        seed: z.number().optional(),
+        imageUrl: z.string().optional(),
+        characterId: z.number().optional(),
+        scenarioId: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return await createGeneratedImage({ userId: ctx.user.id, ...input });
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await deleteGeneratedImage(input.id, ctx.user.id);
+        return { success: true };
+      }),
   }),
 });
 

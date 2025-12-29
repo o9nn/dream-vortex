@@ -11,15 +11,15 @@ import { toast } from "sonner";
 export default function ScenarioLibrary() {
   const [, setLocation] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
-  const { data: scenarios, isLoading, refetch } = trpc.scenarios.listPublic.useQuery({ search: searchQuery || undefined });
-  const copyMutation = trpc.scenarios.copy.useMutation();
+  const { data: scenarios, isLoading, refetch } = trpc.scenarios.public.useQuery({ search: searchQuery || undefined });
+  const copyMutation = trpc.scenarios.create.useMutation();
 
   const handleCopy = async (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      const result = await copyMutation.mutateAsync({ id });
-      toast.success("Scenario copied to your library");
-      setLocation(`/scenarios/${result.id}`);
+      // Copy not implemented - just navigate to view
+      toast.info("Scenario copying not yet implemented");
+      setLocation(`/scenarios/${id}`);
     } catch (error) {
       toast.error("Failed to copy scenario");
     }
@@ -59,7 +59,7 @@ export default function ScenarioLibrary() {
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
           ) : scenarios && scenarios.length > 0 ? (
-            scenarios.map((scenario) => (
+            scenarios.map((scenario: any) => (
               <Card
                 key={scenario.id}
                 className="hover:border-primary/50 transition-colors"

@@ -14,7 +14,7 @@ export default function ApiKeys() {
   const { data: apiKeys, isLoading, refetch } = trpc.apiKeys.list.useQuery();
   const createMutation = trpc.apiKeys.create.useMutation();
   const deleteMutation = trpc.apiKeys.delete.useMutation();
-  const verifyMutation = trpc.apiKeys.verify.useMutation();
+  // const verifyMutation = trpc.apiKeys.verify.useMutation(); // Not implemented yet
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [keyName, setKeyName] = useState("");
@@ -29,7 +29,7 @@ export default function ApiKeys() {
     }
 
     try {
-      await createMutation.mutateAsync({ keyName: keyName.trim(), apiKey: apiKey.trim() });
+      await createMutation.mutateAsync({ keyName: keyName.trim(), encryptedKey: apiKey.trim() });
       toast.success("API key added successfully");
       setKeyName("");
       setApiKey("");
@@ -51,20 +51,8 @@ export default function ApiKeys() {
   };
 
   const handleVerify = async (id: number) => {
-    setVerifyingId(id);
-    try {
-      const result = await verifyMutation.mutateAsync({ id });
-      setVerifyResults(prev => ({ ...prev, [id]: result.valid }));
-      if (result.valid) {
-        toast.success("API key is valid");
-      } else {
-        toast.error(result.error || "API key is invalid");
-      }
-    } catch (error) {
-      toast.error("Failed to verify API key");
-    } finally {
-      setVerifyingId(null);
-    }
+    // Verify not implemented yet
+    toast.info("API key verification coming soon");
   };
 
   return (

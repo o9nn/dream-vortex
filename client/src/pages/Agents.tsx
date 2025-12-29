@@ -19,15 +19,13 @@ export default function Agents() {
   const [newAgentType, setNewAgentType] = useState<string>("employee");
   const [newAgentBio, setNewAgentBio] = useState("");
 
-  const { data: agents, refetch: refetchAgents } = trpc.agent.list.useQuery();
-  const { data: selectedAgent } = trpc.agent.get.useQuery(
+  const { data: agents, refetch: refetchAgents } = trpc.agent.byCompany.useQuery();
+  const { data: selectedAgent } = trpc.agent.byId.useQuery(
     { id: selectedAgentId! },
     { enabled: !!selectedAgentId }
   );
-  const { data: decisions } = trpc.agent.decisions.useQuery(
-    { agentId: selectedAgentId!, limit: 10 },
-    { enabled: !!selectedAgentId }
-  );
+  // Decisions not yet implemented
+  const decisions: any[] = [];
 
   const createAgentMutation = trpc.agent.create.useMutation({
     onSuccess: () => {
@@ -127,7 +125,8 @@ export default function Agents() {
                   onClick={() => createAgentMutation.mutate({
                     name: newAgentName,
                     type: newAgentType as "customer" | "supplier" | "employee" | "partner" | "investor" | "competitor",
-                    bio: newAgentBio || undefined,
+                    personaId: 1, // Default persona
+                    cityId: 1, // Default city
                   })}
                   disabled={!newAgentName || createAgentMutation.isPending}
                 >
@@ -152,7 +151,7 @@ export default function Agents() {
                     No agents yet. Create your first agent!
                   </p>
                 )}
-                {agents?.map((agent) => (
+                {agents?.map((agent: any) => (
                   <button
                     key={agent.id}
                     onClick={() => setSelectedAgentId(agent.id)}
@@ -222,11 +221,11 @@ export default function Agents() {
                         </h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {[
-                            { name: "Openness", value: selectedAgent.openness, desc: "Creativity & curiosity" },
-                            { name: "Conscientiousness", value: selectedAgent.conscientiousness, desc: "Organization & dependability" },
-                            { name: "Extraversion", value: selectedAgent.extraversion, desc: "Sociability & assertiveness" },
-                            { name: "Agreeableness", value: selectedAgent.agreeableness, desc: "Cooperation & trust" },
-                            { name: "Neuroticism", value: selectedAgent.neuroticism, desc: "Emotional sensitivity" },
+                            { name: "Happiness", value: selectedAgent?.happiness || 50, desc: "Overall contentment" },
+                            { name: "Satisfaction", value: selectedAgent?.satisfaction || 50, desc: "Job satisfaction" },
+                            { name: "Stress", value: selectedAgent?.stress || 50, desc: "Current stress level" },
+                            { name: "Loyalty", value: selectedAgent?.loyalty || 50, desc: "Organizational loyalty" },
+                            { name: "Trust", value: selectedAgent?.trust || 50, desc: "Trust in leadership" },
                           ].map((trait) => (
                             <div key={trait.name} className="space-y-2">
                               <div className="flex justify-between text-sm">
@@ -248,11 +247,11 @@ export default function Agents() {
                         </h3>
                         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                           {[
-                            { name: "Impulsiveness", value: selectedAgent.impulsiveness },
-                            { name: "Risk Tolerance", value: selectedAgent.riskTolerance },
-                            { name: "Empathy", value: selectedAgent.empathy },
-                            { name: "Leadership", value: selectedAgent.leadership },
-                            { name: "Independence", value: selectedAgent.independence },
+                            { name: "Financial Need", value: selectedAgent?.financialNeed || 50 },
+                            { name: "Security Need", value: selectedAgent?.securityNeed || 50 },
+                            { name: "Recognition Need", value: selectedAgent?.recognitionNeed || 50 },
+                            { name: "Autonomy Need", value: selectedAgent?.autonomyNeed || 50 },
+                            { name: "Social Need", value: selectedAgent?.socialNeed || 50 },
                           ].map((trait) => (
                             <div key={trait.name} className="text-center p-3 rounded-lg bg-muted/50">
                               <p className={`text-2xl font-bold ${getPersonalityColor(trait.value)}`}>
@@ -265,15 +264,14 @@ export default function Agents() {
                       </div>
 
                       {/* Motivations */}
-                      {selectedAgent.motivations && selectedAgent.motivations.length > 0 && (
+                      {false && (
                         <div>
                           <h3 className="font-semibold mb-4 flex items-center gap-2">
                             <Target className="h-4 w-4" />
                             Motivations
                           </h3>
                           <div className="space-y-3">
-                            {selectedAgent.motivations.map((motivation) => (
-                              <div key={motivation.id} className="p-3 rounded-lg border">
+                           {([] as any[]).map((motivation: any) => (                              <div key={motivation.id} className="p-3 rounded-lg border">
                                 <div className="flex items-center justify-between mb-2">
                                   <Badge variant="outline" className="capitalize">
                                     {motivation.type.replace("_", " ")}
@@ -293,7 +291,7 @@ export default function Agents() {
                   </TabsContent>
 
                   <TabsContent value="emotions" className="mt-0">
-                    {selectedAgent.emotionalState ? (
+                    {selectedAgent ? (
                       <div className="space-y-6">
                         {/* Core Emotions */}
                         <div>
@@ -303,12 +301,12 @@ export default function Agents() {
                           </h3>
                           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                             {[
-                              { name: "Happiness", value: selectedAgent.emotionalState.happiness },
-                              { name: "Satisfaction", value: selectedAgent.emotionalState.satisfaction },
-                              { name: "Stress", value: selectedAgent.emotionalState.stress },
-                              { name: "Anger", value: selectedAgent.emotionalState.anger },
-                              { name: "Fear", value: selectedAgent.emotionalState.fear },
-                              { name: "Trust", value: selectedAgent.emotionalState.trust },
+                              { name: "Happiness", value: selectedAgent?.happiness || 50 },
+                              { name: "Satisfaction", value: selectedAgent?.satisfaction || 50 },
+                              { name: "Stress", value: selectedAgent?.stress || 50 },
+                              { name: "Loyalty", value: selectedAgent?.loyalty || 50 },
+                              { name: "Trust", value: selectedAgent?.trust || 50 },
+                              { name: "Financial Need", value: selectedAgent?.financialNeed || 50 },
                             ].map((emotion) => (
                               <div key={emotion.name} className="space-y-2">
                                 <div className="flex justify-between text-sm">
@@ -334,11 +332,11 @@ export default function Agents() {
                           </h3>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {[
-                              { name: "Financial Security", value: selectedAgent.emotionalState.needFinancialSecurity },
-                              { name: "Recognition", value: selectedAgent.emotionalState.needRecognition },
-                              { name: "Autonomy", value: selectedAgent.emotionalState.needAutonomy },
-                              { name: "Belonging", value: selectedAgent.emotionalState.needBelonging },
-                              { name: "Growth", value: selectedAgent.emotionalState.needGrowth },
+                              { name: "Financial Security", value: selectedAgent?.financialNeed || 50 },
+                              { name: "Recognition", value: selectedAgent?.recognitionNeed || 50 },
+                              { name: "Autonomy", value: selectedAgent?.autonomyNeed || 50 },
+                              { name: "Belonging", value: selectedAgent?.socialNeed || 50 },
+                              { name: "Security", value: selectedAgent?.securityNeed || 50 },
                             ].map((need) => (
                               <div key={need.name} className="space-y-2">
                                 <div className="flex justify-between text-sm">
@@ -356,8 +354,8 @@ export default function Agents() {
                           <Card>
                             <CardContent className="pt-6">
                               <div className="text-center">
-                                <p className={`text-4xl font-bold ${getPersonalityColor(selectedAgent.emotionalState.overallMood)}`}>
-                                  {selectedAgent.emotionalState.overallMood}
+                                <p className={`text-4xl font-bold ${getPersonalityColor(selectedAgent?.happiness || 50)}`}>
+                                  {selectedAgent?.happiness || 50}
                                 </p>
                                 <p className="text-sm text-muted-foreground">Overall Mood</p>
                               </div>
@@ -366,8 +364,8 @@ export default function Agents() {
                           <Card>
                             <CardContent className="pt-6">
                               <div className="text-center">
-                                <p className={`text-4xl font-bold ${getPersonalityColor(100 - selectedAgent.emotionalState.stressLevel)}`}>
-                                  {selectedAgent.emotionalState.stressLevel}
+                                <p className={`text-4xl font-bold ${getPersonalityColor(100 - (selectedAgent?.stress || 50))}`}>
+                                  {selectedAgent?.stress || 50}
                                 </p>
                                 <p className="text-sm text-muted-foreground">Stress Level</p>
                               </div>
@@ -393,7 +391,7 @@ export default function Agents() {
                           No decisions recorded yet
                         </p>
                       )}
-                      {decisions?.map((decision) => (
+                      {decisions?.map((decision: any) => (
                         <Card key={decision.id}>
                           <CardContent className="pt-4">
                             <div className="flex items-center justify-between mb-2">

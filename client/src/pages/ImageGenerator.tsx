@@ -29,7 +29,7 @@ const STYLES = [
 export default function ImageGenerator() {
   const { data: apiKeys } = trpc.apiKeys.list.useQuery();
   const { data: images, refetch: refetchImages } = trpc.images.list.useQuery({ limit: 20 });
-  const saveMutation = trpc.images.save.useMutation();
+  const saveMutation = trpc.images.create.useMutation();
   const deleteMutation = trpc.images.delete.useMutation();
 
   const [includePrompt, setIncludePrompt] = useState("");

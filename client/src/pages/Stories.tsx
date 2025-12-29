@@ -33,7 +33,7 @@ export default function Stories() {
       toast.success("Story created");
       setIsDialogOpen(false);
       setTitle("");
-      setLocation(`/stories/${result.id}`);
+      if (result) setLocation(`/stories/${result}`);
     } catch (error) {
       toast.error("Failed to create story");
     }

@@ -13,7 +13,7 @@ import { toast } from "sonner";
 
 export default function Chat() {
   const [, setLocation] = useLocation();
-  const { data: sessions, isLoading, refetch } = trpc.chat.listSessions.useQuery();
+  const { data: sessions, isLoading, refetch } = trpc.chat.sessions.useQuery();
   const { data: scenarios } = trpc.scenarios.list.useQuery();
   const { data: apiKeys } = trpc.apiKeys.list.useQuery();
   const createMutation = trpc.chat.createSession.useMutation();
@@ -42,7 +42,7 @@ export default function Chat() {
       setIsDialogOpen(false);
       setTitle("");
       setScenarioId("");
-      setLocation(`/chat/${result.id}`);
+      if (result) setLocation(`/chat/${result}`);
     } catch (error) {
       toast.error("Failed to create chat session");
     }
@@ -151,7 +151,7 @@ export default function Chat() {
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
           ) : sessions && sessions.length > 0 ? (
-            sessions.map((session) => (
+            sessions.map((session: any) => (
               <Card
                 key={session.id}
                 className="hover:border-primary/50 transition-colors cursor-pointer"

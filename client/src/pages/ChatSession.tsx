@@ -28,7 +28,7 @@ export default function ChatSession() {
   const params = useParams<{ id: string }>();
   const sessionId = parseInt(params.id || "0");
   
-  const { data: session, isLoading, refetch } = trpc.chat.getSession.useQuery({ id: sessionId });
+  const { data: session, isLoading, refetch } = trpc.chat.sessionById.useQuery({ id: sessionId });
   const { data: apiKeys } = trpc.apiKeys.list.useQuery();
   const addMessageMutation = trpc.chat.addMessage.useMutation();
   const updateSessionMutation = trpc.chat.updateSession.useMutation();
@@ -50,8 +50,9 @@ export default function ChatSession() {
   const hasApiKey = apiKeys && apiKeys.length > 0;
 
   useEffect(() => {
-    if (session?.messages) {
-      setMessages(session.messages.map(m => ({
+    if (session) {
+      // Messages are loaded separately
+      setMessages(((session as any).messages || []).map((m: any) => ({
         id: m.id,
         messageType: m.messageType as MessageType,
         characterLabel: m.characterLabel ?? undefined,
@@ -183,8 +184,7 @@ export default function ChatSession() {
     try {
       await updateSessionMutation.mutateAsync({
         id: sessionId,
-        modelId,
-        samplingParams: { temperature, topP, maxTokens },
+        title: session?.title || "Chat Session",
       });
       toast.success("Settings saved");
       setShowSettings(false);

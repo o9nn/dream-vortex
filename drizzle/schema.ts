@@ -1723,3 +1723,21 @@ export const storiesRelations = relations(stories, ({ one, many }) => ({
   }),
   characters: many(storyCharacters),
 }));
+
+
+// ============================================================================
+// EVENT PROPAGATION - Track event propagation between business and narrative systems
+// ============================================================================
+export const eventPropagation = mysqlTable("event_propagation", {
+  id: int("id").autoincrement().primaryKey(),
+  sourceType: mysqlEnum("sourceType", ["business", "narrative"]).notNull(),
+  sourceEventId: int("sourceEventId").notNull(),
+  sourceEventType: varchar("sourceEventType", { length: 64 }).notNull(),
+  targetType: mysqlEnum("targetType", ["business", "narrative"]).notNull(),
+  targetEventType: varchar("targetEventType", { length: 64 }).notNull(),
+  propagationData: json("propagationData").$type<Record<string, unknown>>(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type EventPropagation = typeof eventPropagation.$inferSelect;
+export type InsertEventPropagation = typeof eventPropagation.$inferInsert;

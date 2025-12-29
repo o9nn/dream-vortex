@@ -1,4 +1,4 @@
-import { and, eq, desc, asc, sql } from "drizzle-orm";
+import { and, eq, desc, asc, sql, like } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
@@ -88,6 +88,38 @@ import {
   scheduledWorldEvents,
   InsertScheduledWorldEvent,
   ScheduledWorldEvent,
+  // DreamCog storytelling imports
+  apiKeys,
+  InsertApiKey,
+  characters,
+  InsertCharacter,
+  Character,
+  characterEmotionalStates,
+  InsertCharacterEmotionalState,
+  characterMotivations,
+  InsertCharacterMotivation,
+  characterMemories,
+  InsertCharacterMemory,
+  scenarios,
+  InsertScenario,
+  scenarioCharacters,
+  InsertScenarioCharacter,
+  scenarioInteractions,
+  InsertScenarioInteraction,
+  chatSessions,
+  InsertChatSession,
+  chatMessages,
+  InsertChatMessage,
+  stories,
+  InsertStory,
+  storyCharacters,
+  InsertStoryCharacter,
+  generatedImages,
+  InsertGeneratedImage,
+  groups,
+  InsertGroup,
+  scheduledEvents,
+  InsertScheduledEvent,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -104,7 +136,6 @@ export async function getDb() {
   }
   return _db;
 }
-
 // ============================================================================
 // USER OPERATIONS
 // ============================================================================
@@ -190,7 +221,6 @@ export async function getUserById(id: number) {
   const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
-
 // ============================================================================
 // COMPANY OPERATIONS
 // ============================================================================
@@ -255,7 +285,6 @@ export async function getAllCompanies(): Promise<Company[]> {
 
   return await db.select().from(companies).orderBy(desc(companies.cash));
 }
-
 // ============================================================================
 // BUSINESS UNIT OPERATIONS
 // ============================================================================
@@ -313,7 +342,6 @@ export async function updateBusinessUnit(
 
   await db.update(businessUnits).set(data).where(eq(businessUnits.id, id));
 }
-
 // ============================================================================
 // CITY OPERATIONS
 // ============================================================================
@@ -356,7 +384,6 @@ export async function seedCities(): Promise<void> {
 
   await db.insert(cities).values(defaultCities);
 }
-
 // ============================================================================
 // RESOURCE TYPE OPERATIONS
 // ============================================================================
@@ -417,7 +444,6 @@ export async function seedResourceTypes(): Promise<void> {
 
   await db.insert(resourceTypes).values(defaultResources);
 }
-
 // ============================================================================
 // EMPLOYEE OPERATIONS
 // ============================================================================
@@ -453,7 +479,6 @@ export async function updateEmployees(
     .set(data)
     .where(eq(employees.businessUnitId, businessUnitId));
 }
-
 // ============================================================================
 // INVENTORY OPERATIONS
 // ============================================================================
@@ -499,7 +524,6 @@ export async function upsertInventory(data: InsertInventory): Promise<void> {
     await db.insert(inventory).values(data);
   }
 }
-
 // ============================================================================
 // MARKET OPERATIONS
 // ============================================================================
@@ -534,7 +558,6 @@ export async function getMarketListings(
 
   return await query;
 }
-
 // ============================================================================
 // TRANSACTION OPERATIONS
 // ============================================================================
@@ -559,7 +582,6 @@ export async function getTransactionsByCompany(
     .orderBy(desc(transactions.createdAt))
     .limit(limit);
 }
-
 // ============================================================================
 // NOTIFICATION OPERATIONS
 // ============================================================================
@@ -591,7 +613,6 @@ export async function markNotificationRead(id: number): Promise<void> {
     .set({ isRead: true })
     .where(eq(notifications.id, id));
 }
-
 // ============================================================================
 // GAME STATE OPERATIONS
 // ============================================================================
@@ -625,7 +646,6 @@ export async function incrementGameTurn(): Promise<void> {
       lastTurnProcessed: new Date(),
     });
 }
-
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
@@ -635,8 +655,6 @@ export async function initializeGameData(): Promise<void> {
   await seedAgenticSimulationData(); // Add agentic simulation seed data
   await getGameState(); // Ensures game state exists
 }
-
-
 // ============================================================================
 // PRODUCTION OPERATIONS
 // ============================================================================
@@ -696,7 +714,6 @@ export async function getProductionQueue(businessUnitId: number) {
     .where(eq(productionQueue.businessUnitId, businessUnitId))
     .orderBy(productionQueue.createdAt);
 }
-
 // ============================================================================
 // MARKET TRADING OPERATIONS
 // ============================================================================
@@ -873,7 +890,6 @@ export async function cancelMarketListing(listingId: number, companyId: number):
 
   return { success: true, message: "Listing cancelled" };
 }
-
 // ============================================================================
 // SEED PRODUCTION RECIPES
 // ============================================================================
@@ -1068,7 +1084,6 @@ export async function seedProductionRecipes(): Promise<void> {
     }
   }
 }
-
 // ============================================================================
 // AGENTIC SIMULATION OPERATIONS
 // ============================================================================
@@ -1116,7 +1131,6 @@ export async function getAllCharacterPersonas(): Promise<CharacterPersona[]> {
 
   return await db.select().from(characterPersonas);
 }
-
 // ============================================================================
 // CHARACTER TRAITS
 // ============================================================================
@@ -1160,7 +1174,6 @@ export async function getCharacterTraitsByCategory(
     .from(characterTraits)
     .where(eq(characterTraits.category, category));
 }
-
 // ============================================================================
 // AGENTS
 // ============================================================================
@@ -1242,7 +1255,6 @@ export async function updateAgentEmotionalState(
 
   await db.update(agents).set(emotions).where(eq(agents.id, id));
 }
-
 // ============================================================================
 // AGENT TRAITS
 // ============================================================================
@@ -1293,7 +1305,6 @@ export async function removeTraitFromAgent(
     .delete(agentTraits)
     .where(and(eq(agentTraits.agentId, agentId), eq(agentTraits.traitId, traitId)));
 }
-
 // ============================================================================
 // RELATIONSHIPS
 // ============================================================================
@@ -1396,7 +1407,6 @@ export async function recordRelationshipInteraction(
     });
   }
 }
-
 // ============================================================================
 // AGENT GROUPS
 // ============================================================================
@@ -1446,7 +1456,6 @@ export async function updateAgentGroup(
 
   await db.update(agentGroups).set(updates).where(eq(agentGroups.id, id));
 }
-
 // ============================================================================
 // GROUP MEMBERSHIPS
 // ============================================================================
@@ -1518,7 +1527,6 @@ export async function removeAgentFromGroup(
       )
     );
 }
-
 // ============================================================================
 // COMMUNITIES
 // ============================================================================
@@ -1560,7 +1568,6 @@ export async function updateCommunity(
 
   await db.update(communities).set(updates).where(eq(communities.id, id));
 }
-
 // ============================================================================
 // COMMUNITY MEMBERSHIPS
 // ============================================================================
@@ -1614,7 +1621,6 @@ export async function getAgentCommunities(agentId: number): Promise<
     community: r.communities!,
   }));
 }
-
 // ============================================================================
 // AGENT EVENTS
 // ============================================================================
@@ -1750,7 +1756,6 @@ export async function processAgentEvent(eventId: number): Promise<void> {
     });
   }
 }
-
 // ============================================================================
 // EVENT TRIGGERS
 // ============================================================================
@@ -1790,7 +1795,6 @@ export async function getActiveEventTriggers(): Promise<
     .where(eq(eventTriggers.isActive, true))
     .orderBy(desc(eventTriggers.priority));
 }
-
 // ============================================================================
 // AGENT HISTORIES
 // ============================================================================
@@ -1817,7 +1821,6 @@ export async function getAgentHistory(
     .orderBy(desc(agentHistories.recordedAt))
     .limit(limit);
 }
-
 // ============================================================================
 // SEED AGENTIC SIMULATION DATA
 // ============================================================================
@@ -1927,7 +1930,6 @@ export async function seedAgenticSimulationData(): Promise<void> {
 
   console.log("[Database] Agentic simulation data seeded successfully");
 }
-
 // ============================================================================
 // DREAMCOG INTEGRATION - BIG FIVE PERSONALITY FUNCTIONS
 // ============================================================================
@@ -1935,6 +1937,9 @@ export async function seedAgenticSimulationData(): Promise<void> {
 export async function createAgentBigFivePersonality(
   data: InsertAgentBigFivePersonality
 ): Promise<AgentBigFivePersonality> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   const [personality] = await db
     .insert(agentBigFivePersonality)
     .values(data)
@@ -1947,11 +1952,15 @@ export async function createAgentBigFivePersonality(
     .limit(1);
   
   return created[0];
-}
 
+
+}
 export async function getAgentBigFivePersonality(
   agentId: number
 ): Promise<AgentBigFivePersonality | null> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   const [personality] = await db
     .select()
     .from(agentBigFivePersonality)
@@ -1959,12 +1968,16 @@ export async function getAgentBigFivePersonality(
     .limit(1);
   
   return personality || null;
-}
 
+
+}
 export async function updateAgentBigFivePersonality(
   agentId: number,
   data: Partial<InsertAgentBigFivePersonality>
 ): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   await db
     .update(agentBigFivePersonality)
     .set(data)
@@ -1978,6 +1991,9 @@ export async function updateAgentBigFivePersonality(
 export async function createAgentMotivation(
   data: InsertAgentMotivation
 ): Promise<AgentMotivation> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   const [motivation] = await db
     .insert(agentMotivations)
     .values(data)
@@ -1990,12 +2006,16 @@ export async function createAgentMotivation(
     .limit(1);
   
   return created[0];
-}
 
+
+}
 export async function getAgentMotivations(
   agentId: number,
   activeOnly: boolean = false
 ): Promise<AgentMotivation[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   const conditions = [eq(agentMotivations.agentId, agentId)];
   if (activeOnly) {
     conditions.push(eq(agentMotivations.isActive, true));
@@ -2006,12 +2026,16 @@ export async function getAgentMotivations(
     .from(agentMotivations)
     .where(and(...conditions))
     .orderBy(desc(agentMotivations.priority));
-}
 
+
+}
 export async function updateAgentMotivation(
   id: number,
   data: Partial<InsertAgentMotivation>
 ): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   await db
     .update(agentMotivations)
     .set(data)
@@ -2025,6 +2049,9 @@ export async function updateAgentMotivation(
 export async function createAgentMemory(
   data: InsertAgentMemory
 ): Promise<AgentMemory> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   const [memory] = await db
     .insert(agentMemories)
     .values(data)
@@ -2037,12 +2064,16 @@ export async function createAgentMemory(
     .limit(1);
   
   return created[0];
-}
 
+
+}
 export async function getAgentMemories(
   agentId: number,
   limit: number = 50
 ): Promise<AgentMemory[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   return await db
     .select()
     .from(agentMemories)
@@ -2054,12 +2085,16 @@ export async function getAgentMemories(
     )
     .orderBy(desc(agentMemories.importance), desc(agentMemories.memoryDate))
     .limit(limit);
-}
 
+
+}
 export async function updateAgentMemory(
   id: number,
   data: Partial<InsertAgentMemory>
 ): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   await db
     .update(agentMemories)
     .set(data)
@@ -2073,6 +2108,9 @@ export async function updateAgentMemory(
 export async function createRelationshipEvent(
   data: InsertRelationshipEvent
 ): Promise<RelationshipEvent> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   const [event] = await db
     .insert(relationshipEvents)
     .values(data)
@@ -2085,11 +2123,15 @@ export async function createRelationshipEvent(
     .limit(1);
   
   return created[0];
-}
 
+
+}
 export async function getRelationshipEvents(
   relationshipId: number
 ): Promise<RelationshipEvent[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   return await db
     .select()
     .from(relationshipEvents)
@@ -2104,6 +2146,9 @@ export async function getRelationshipEvents(
 export async function createWorld(
   data: InsertWorld
 ): Promise<World> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   const [world] = await db
     .insert(worlds)
     .values(data)
@@ -2116,9 +2161,13 @@ export async function createWorld(
     .limit(1);
   
   return created[0];
-}
 
+
+}
 export async function getWorldById(id: number): Promise<World | null> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   const [world] = await db
     .select()
     .from(worlds)
@@ -2126,20 +2175,28 @@ export async function getWorldById(id: number): Promise<World | null> {
     .limit(1);
   
   return world || null;
-}
 
+
+}
 export async function getWorldsByUserId(userId: number): Promise<World[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   return await db
     .select()
     .from(worlds)
     .where(eq(worlds.userId, userId))
     .orderBy(desc(worlds.createdAt));
-}
 
+
+}
 export async function updateWorld(
   id: number,
   data: Partial<InsertWorld>
 ): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   await db
     .update(worlds)
     .set(data)
@@ -2153,6 +2210,9 @@ export async function updateWorld(
 export async function createLocation(
   data: InsertLocation
 ): Promise<Location> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   const [location] = await db
     .insert(locations)
     .values(data)
@@ -2165,9 +2225,13 @@ export async function createLocation(
     .limit(1);
   
   return created[0];
-}
 
+
+}
 export async function getLocationById(id: number): Promise<Location | null> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   const [location] = await db
     .select()
     .from(locations)
@@ -2175,27 +2239,39 @@ export async function getLocationById(id: number): Promise<Location | null> {
     .limit(1);
   
   return location || null;
-}
 
+
+}
 export async function getLocationsByWorldId(worldId: number): Promise<Location[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   return await db
     .select()
     .from(locations)
     .where(eq(locations.worldId, worldId))
     .orderBy(desc(locations.createdAt));
-}
 
+
+}
 export async function getSubLocations(parentLocationId: number): Promise<Location[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   return await db
     .select()
     .from(locations)
     .where(eq(locations.parentLocationId, parentLocationId));
-}
 
+
+}
 export async function updateLocation(
   id: number,
   data: Partial<InsertLocation>
 ): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   await db
     .update(locations)
     .set(data)
@@ -2209,6 +2285,9 @@ export async function updateLocation(
 export async function createLoreEntry(
   data: InsertLoreEntry
 ): Promise<LoreEntry> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   const [lore] = await db
     .insert(loreEntries)
     .values(data)
@@ -2221,9 +2300,13 @@ export async function createLoreEntry(
     .limit(1);
   
   return created[0];
-}
 
+
+}
 export async function getLoreEntryById(id: number): Promise<LoreEntry | null> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   const [lore] = await db
     .select()
     .from(loreEntries)
@@ -2231,12 +2314,16 @@ export async function getLoreEntryById(id: number): Promise<LoreEntry | null> {
     .limit(1);
   
   return lore || null;
-}
 
+
+}
 export async function getLoreEntriesByWorldId(
   worldId: number,
   category?: string
 ): Promise<LoreEntry[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   const conditions = [eq(loreEntries.worldId, worldId)];
   if (category) {
     conditions.push(eq(loreEntries.category, category as any));
@@ -2247,12 +2334,16 @@ export async function getLoreEntriesByWorldId(
     .from(loreEntries)
     .where(and(...conditions))
     .orderBy(desc(loreEntries.createdAt));
-}
 
+
+}
 export async function updateLoreEntry(
   id: number,
   data: Partial<InsertLoreEntry>
 ): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   await db
     .update(loreEntries)
     .set(data)
@@ -2266,6 +2357,9 @@ export async function updateLoreEntry(
 export async function createWorldEvent(
   data: InsertWorldEvent
 ): Promise<WorldEvent> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   const [event] = await db
     .insert(worldEvents)
     .values(data)
@@ -2278,9 +2372,13 @@ export async function createWorldEvent(
     .limit(1);
   
   return created[0];
-}
 
+
+}
 export async function getWorldEventById(id: number): Promise<WorldEvent | null> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   const [event] = await db
     .select()
     .from(worldEvents)
@@ -2288,20 +2386,28 @@ export async function getWorldEventById(id: number): Promise<WorldEvent | null> 
     .limit(1);
   
   return event || null;
-}
 
+
+}
 export async function getWorldEventsByWorldId(worldId: number): Promise<WorldEvent[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   return await db
     .select()
     .from(worldEvents)
     .where(eq(worldEvents.worldId, worldId))
     .orderBy(desc(worldEvents.importance), desc(worldEvents.eventDate));
-}
 
+
+}
 export async function updateWorldEvent(
   id: number,
   data: Partial<InsertWorldEvent>
 ): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   await db
     .update(worldEvents)
     .set(data)
@@ -2315,6 +2421,9 @@ export async function updateWorldEvent(
 export async function createScheduledWorldEvent(
   data: InsertScheduledWorldEvent
 ): Promise<ScheduledWorldEvent> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   const [event] = await db
     .insert(scheduledWorldEvents)
     .values(data)
@@ -2327,11 +2436,15 @@ export async function createScheduledWorldEvent(
     .limit(1);
   
   return created[0];
-}
 
+
+}
 export async function getScheduledWorldEventById(
   id: number
 ): Promise<ScheduledWorldEvent | null> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   const [event] = await db
     .select()
     .from(scheduledWorldEvents)
@@ -2339,11 +2452,15 @@ export async function getScheduledWorldEventById(
     .limit(1);
   
   return event || null;
-}
 
+
+}
 export async function getPendingScheduledWorldEvents(
   worldId: number
 ): Promise<ScheduledWorldEvent[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   return await db
     .select()
     .from(scheduledWorldEvents)
@@ -2354,12 +2471,16 @@ export async function getPendingScheduledWorldEvents(
       )
     )
     .orderBy(asc(scheduledWorldEvents.scheduledFor), desc(scheduledWorldEvents.priority));
-}
 
+
+}
 export async function updateScheduledWorldEvent(
   id: number,
   data: Partial<InsertScheduledWorldEvent>
 ): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
   await db
     .update(scheduledWorldEvents)
     .set(data)
@@ -2413,7 +2534,6 @@ export async function updateApiKeyLastUsed(id: number) {
   if (!db) return;
   await db.update(apiKeys).set({ lastUsed: new Date() }).where(eq(apiKeys.id, id));
 }
-
 // ============ STORY CHARACTER HELPERS ============
 
 export async function createStoryCharacter(data: InsertCharacter) {
@@ -2449,7 +2569,6 @@ export async function deleteStoryCharacter(id: number, userId: number) {
   if (!db) return;
   await db.delete(characters).where(and(eq(characters.id, id), eq(characters.userId, userId)));
 }
-
 // ============ SCENARIO HELPERS ============
 
 export async function createScenario(data: InsertScenario) {
@@ -2496,7 +2615,6 @@ export async function deleteScenario(id: number, userId: number) {
   await db.delete(scenarioCharacters).where(eq(scenarioCharacters.scenarioId, id));
   await db.delete(scenarios).where(and(eq(scenarios.id, id), eq(scenarios.userId, userId)));
 }
-
 // ============ SCENARIO CHARACTER HELPERS ============
 
 export async function addScenarioCharacter(data: InsertScenarioCharacter) {
@@ -2519,7 +2637,6 @@ export async function deleteScenarioCharacter(id: number) {
   if (!db) return;
   await db.delete(scenarioCharacters).where(eq(scenarioCharacters.id, id));
 }
-
 // ============ SCENARIO INTERACTION HELPERS ============
 
 export async function addScenarioInteraction(data: InsertScenarioInteraction) {
@@ -2548,7 +2665,6 @@ export async function deleteScenarioInteraction(id: number) {
   if (!db) return;
   await db.delete(scenarioInteractions).where(eq(scenarioInteractions.id, id));
 }
-
 // ============ CHAT SESSION HELPERS ============
 
 export async function createChatSession(data: InsertChatSession) {
@@ -2585,7 +2701,6 @@ export async function deleteChatSession(id: number, userId: number) {
   await db.delete(chatMessages).where(eq(chatMessages.sessionId, id));
   await db.delete(chatSessions).where(and(eq(chatSessions.id, id), eq(chatSessions.userId, userId)));
 }
-
 // ============ CHAT MESSAGE HELPERS ============
 
 export async function addChatMessage(data: InsertChatMessage) {
@@ -2608,7 +2723,6 @@ export async function deleteChatMessage(id: number) {
   if (!db) return;
   await db.delete(chatMessages).where(eq(chatMessages.id, id));
 }
-
 // ============ STORY HELPERS ============
 
 export async function createStory(data: InsertStory) {
@@ -2645,7 +2759,6 @@ export async function deleteStory(id: number, userId: number) {
   await db.delete(storyCharacters).where(eq(storyCharacters.storyId, id));
   await db.delete(stories).where(and(eq(stories.id, id), eq(stories.userId, userId)));
 }
-
 // ============ STORY CHARACTER LINK HELPERS ============
 
 export async function addStoryCharacterLink(data: InsertStoryCharacter) {
@@ -2674,7 +2787,6 @@ export async function deleteStoryCharacterLink(id: number) {
   if (!db) return;
   await db.delete(storyCharacters).where(eq(storyCharacters.id, id));
 }
-
 // ============ GENERATED IMAGE HELPERS ============
 
 export async function createGeneratedImage(data: InsertGeneratedImage) {
@@ -2698,7 +2810,6 @@ export async function deleteGeneratedImage(id: number, userId: number) {
   if (!db) return;
   await db.delete(generatedImages).where(and(eq(generatedImages.id, id), eq(generatedImages.userId, userId)));
 }
-
 // ============ CHARACTER EMOTIONAL STATE HELPERS ============
 
 export async function getCharacterEmotionalState(characterId: number) {
@@ -2724,7 +2835,6 @@ export async function upsertCharacterEmotionalState(data: InsertCharacterEmotion
     return result[0].insertId;
   }
 }
-
 // ============ CHARACTER MOTIVATION HELPERS ============
 
 export async function createCharacterMotivationEntry(data: InsertCharacterMotivation) {
@@ -2758,7 +2868,6 @@ export async function deleteCharacterMotivationEntry(id: number) {
   if (!db) return;
   await db.delete(characterMotivations).where(eq(characterMotivations.id, id));
 }
-
 // ============ CHARACTER MEMORY HELPERS ============
 
 export async function createCharacterMemoryEntry(data: InsertCharacterMemory) {
@@ -2788,7 +2897,6 @@ export async function deleteCharacterMemoryEntry(id: number) {
   if (!db) return;
   await db.delete(characterMemories).where(eq(characterMemories.id, id));
 }
-
 // ============ STORY GROUP HELPERS ============
 
 export async function createStoryGroup(data: InsertGroup) {
@@ -2824,7 +2932,6 @@ export async function deleteStoryGroup(id: number, userId: number) {
   if (!db) return;
   await db.delete(groups).where(and(eq(groups.id, id), eq(groups.userId, userId)));
 }
-
 // ============ SCHEDULED EVENT HELPERS (DREAMCOG) ============
 
 export async function createScheduledEventEntry(data: InsertScheduledEvent) {
