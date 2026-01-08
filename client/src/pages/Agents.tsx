@@ -20,12 +20,19 @@ export default function Agents() {
   const [newAgentBio, setNewAgentBio] = useState("");
 
   const { data: agents, refetch: refetchAgents } = trpc.agent.byCompany.useQuery();
-  const { data: selectedAgent } = trpc.agent.byId.useQuery(
+  const { data: selectedAgent, refetch: refetchSelectedAgent } = trpc.agent.byId.useQuery(
     { id: selectedAgentId! },
     { enabled: !!selectedAgentId }
   );
-  // Decisions not yet implemented
-  const decisions: any[] = [];
+  const { data: agentHistory = [] } = trpc.agent.history.useQuery(
+    { agentId: selectedAgentId!, limit: 10 },
+    { enabled: !!selectedAgentId }
+  );
+  const { data: agentPersonality } = trpc.personality.get.useQuery(
+    { agentId: selectedAgentId! },
+    { enabled: !!selectedAgentId }
+  );
+  const makeDecisionMutation = trpc.agent.makeDecision.useMutation();
 
   const createAgentMutation = trpc.agent.create.useMutation({
     onSuccess: () => {
@@ -221,11 +228,11 @@ export default function Agents() {
                         </h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {[
-                            { name: "Happiness", value: selectedAgent?.happiness || 50, desc: "Overall contentment" },
-                            { name: "Satisfaction", value: selectedAgent?.satisfaction || 50, desc: "Job satisfaction" },
-                            { name: "Stress", value: selectedAgent?.stress || 50, desc: "Current stress level" },
-                            { name: "Loyalty", value: selectedAgent?.loyalty || 50, desc: "Organizational loyalty" },
-                            { name: "Trust", value: selectedAgent?.trust || 50, desc: "Trust in leadership" },
+                            { name: "Openness", value: agentPersonality?.openness ?? 50, desc: "Curiosity and creativity" },
+                            { name: "Conscientiousness", value: agentPersonality?.conscientiousness ?? 50, desc: "Organization and reliability" },
+                            { name: "Extraversion", value: agentPersonality?.extraversion ?? 50, desc: "Sociability and energy" },
+                            { name: "Agreeableness", value: agentPersonality?.agreeableness ?? 50, desc: "Cooperation and trust" },
+                            { name: "Neuroticism", value: agentPersonality?.neuroticism ?? 50, desc: "Emotional sensitivity" },
                           ].map((trait) => (
                             <div key={trait.name} className="space-y-2">
                               <div className="flex justify-between text-sm">
@@ -247,11 +254,11 @@ export default function Agents() {
                         </h3>
                         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                           {[
-                            { name: "Financial Need", value: selectedAgent?.financialNeed || 50 },
-                            { name: "Security Need", value: selectedAgent?.securityNeed || 50 },
-                            { name: "Recognition Need", value: selectedAgent?.recognitionNeed || 50 },
-                            { name: "Autonomy Need", value: selectedAgent?.autonomyNeed || 50 },
-                            { name: "Social Need", value: selectedAgent?.socialNeed || 50 },
+                            { name: "Impulsiveness", value: agentPersonality?.impulsiveness ?? 50 },
+                            { name: "Risk Taking", value: agentPersonality?.riskTaking ?? 50 },
+                            { name: "Empathy", value: agentPersonality?.empathy ?? 50 },
+                            { name: "Leadership", value: agentPersonality?.leadership ?? 50 },
+                            { name: "Independence", value: agentPersonality?.independence ?? 50 },
                           ].map((trait) => (
                             <div key={trait.name} className="text-center p-3 rounded-lg bg-muted/50">
                               <p className={`text-2xl font-bold ${getPersonalityColor(trait.value)}`}>
@@ -384,35 +391,71 @@ export default function Agents() {
                     <div className="space-y-4">
                       <h3 className="font-semibold flex items-center gap-2">
                         <Lightbulb className="h-4 w-4" />
-                        Recent Decisions
+                        Agent History & Decisions
                       </h3>
-                      {decisions?.length === 0 && (
+
+                      {/* Quick Decision Test */}
+                      <Card className="bg-muted/30">
+                        <CardContent className="pt-4">
+                          <p className="text-sm text-muted-foreground mb-3">
+                            Test agent decision-making with a sample scenario
+                          </p>
+                          <Button
+                            size="sm"
+                            disabled={makeDecisionMutation.isPending}
+                            onClick={async () => {
+                              if (!selectedAgentId) return;
+                              try {
+                                const result = await makeDecisionMutation.mutateAsync({
+                                  agentId: selectedAgentId,
+                                  context: {
+                                    type: "trade",
+                                    situation: "A new supplier is offering materials at 20% below market price, but they're a new company with no track record.",
+                                    options: [
+                                      { id: "accept", description: "Accept the deal", expectedOutcome: "Save money but risk quality", riskLevel: 65, potentialReward: 70, requiresCooperation: false, requiresConflict: false },
+                                      { id: "negotiate", description: "Negotiate for smaller trial order", expectedOutcome: "Test relationship before committing", riskLevel: 30, potentialReward: 50, requiresCooperation: true, requiresConflict: false },
+                                      { id: "reject", description: "Decline and stay with current supplier", expectedOutcome: "Maintain stability", riskLevel: 10, potentialReward: 20, requiresCooperation: false, requiresConflict: false },
+                                    ],
+                                  },
+                                });
+                                refetchSelectedAgent();
+                                alert(`Decision: ${result.chosenOption.description}\n\nReasoning: ${result.reasoning}\n\nConfidence: ${result.confidence}%`);
+                              } catch (err) {
+                                console.error(err);
+                              }
+                            }}
+                          >
+                            {makeDecisionMutation.isPending ? "Thinking..." : "Run Sample Decision"}
+                          </Button>
+                        </CardContent>
+                      </Card>
+
+                      {agentHistory?.length === 0 ? (
                         <p className="text-muted-foreground text-center py-8">
-                          No decisions recorded yet
+                          No history recorded yet
                         </p>
+                      ) : (
+                        agentHistory?.map((entry: any) => (
+                          <Card key={entry.id}>
+                            <CardContent className="pt-4">
+                              <div className="flex items-center justify-between mb-2">
+                                <Badge variant="outline">
+                                  Record #{entry.id}
+                                </Badge>
+                                <span className="text-xs text-muted-foreground">
+                                  {new Date(entry.recordedAt).toLocaleString()}
+                                </span>
+                              </div>
+                              <p className="text-sm mb-2">{entry.notes || "State snapshot"}</p>
+                              <div className="flex gap-4 text-xs text-muted-foreground">
+                                <span>Happiness: {entry.happiness}</span>
+                                <span>Satisfaction: {entry.satisfaction}</span>
+                                <span>Stress: {entry.stress}</span>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))
                       )}
-                      {decisions?.map((decision: any) => (
-                        <Card key={decision.id}>
-                          <CardContent className="pt-4">
-                            <div className="flex items-center justify-between mb-2">
-                              <Badge variant="outline" className="capitalize">
-                                {decision.decisionType}
-                              </Badge>
-                              <Badge variant={
-                                decision.outcome === "success" ? "default" :
-                                decision.outcome === "failure" ? "destructive" :
-                                "secondary"
-                              }>
-                                {decision.outcome}
-                              </Badge>
-                            </div>
-                            <p className="text-sm mb-2">{decision.reasoning}</p>
-                            <p className="text-xs text-muted-foreground">
-                              Chose: {decision.chosenOption} • {new Date(decision.createdAt).toLocaleString()}
-                            </p>
-                          </CardContent>
-                        </Card>
-                      ))}
                     </div>
                   </TabsContent>
                 </CardContent>

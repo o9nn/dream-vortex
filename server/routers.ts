@@ -3,6 +3,8 @@ import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { agentBrain, DecisionContext, DecisionOption } from "./services/agentBrain";
+import { eventBridge, BusinessEvent, NarrativeEvent } from "./services/eventBridge";
 import {
   createCompany,
   getCompanyByUserId,
@@ -131,10 +133,15 @@ import {
   deleteScenario,
   addScenarioCharacter,
   getScenarioCharacters,
-  // updateScenarioCharacter, // Not implemented yet
+  updateScenarioCharacter,
   deleteScenarioCharacter,
   addScenarioInteraction,
   getScenarioInteractions,
+  updateScenarioInteraction,
+  deleteScenarioInteraction,
+  getEventPropagationHistory,
+  getEventPropagationBySourceType,
+  verifyApiKey,
   createChatSession,
   getChatSessionsByUserId,
   getChatSessionById,
@@ -800,6 +807,104 @@ export const appRouter = router({
       .input(z.object({ agentId: z.number(), limit: z.number().optional() }))
       .query(async ({ input }) => {
         return await getAgentHistory(input.agentId, input.limit);
+      }),
+
+    // Make a decision for an agent using the AgentBrain service
+    makeDecision: protectedProcedure
+      .input(
+        z.object({
+          agentId: z.number(),
+          context: z.object({
+            type: z.enum(["trade", "negotiation", "investment", "hiring", "partnership", "conflict", "cooperation"]),
+            situation: z.string(),
+            options: z.array(z.object({
+              id: z.string(),
+              description: z.string(),
+              expectedOutcome: z.string(),
+              riskLevel: z.number().min(0).max(100),
+              potentialReward: z.number().min(0).max(100),
+              requiresCooperation: z.boolean(),
+              requiresConflict: z.boolean(),
+            })),
+            relatedAgentId: z.number().optional(),
+            relatedCompanyId: z.number().optional(),
+            financialStakes: z.number().optional(),
+            riskLevel: z.number().optional(),
+          }),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const agent = await getAgentById(input.agentId);
+        if (!agent) throw new Error("Agent not found");
+
+        // Verify ownership if agent belongs to a company
+        if (agent.companyId) {
+          const company = await getCompanyByUserId(ctx.user.id);
+          if (!company || agent.companyId !== company.id) {
+            throw new Error("Not authorized");
+          }
+        }
+
+        return await agentBrain.makeDecision(input.agentId, input.context as DecisionContext);
+      }),
+
+    // Process the outcome of a decision
+    processDecisionOutcome: protectedProcedure
+      .input(
+        z.object({
+          agentId: z.number(),
+          outcome: z.enum(["success", "failure", "neutral"]),
+          decisionType: z.string(),
+          reasoning: z.string(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const agent = await getAgentById(input.agentId);
+        if (!agent) throw new Error("Agent not found");
+
+        if (agent.companyId) {
+          const company = await getCompanyByUserId(ctx.user.id);
+          if (!company || agent.companyId !== company.id) {
+            throw new Error("Not authorized");
+          }
+        }
+
+        await agentBrain.processDecisionOutcome(
+          input.agentId,
+          input.outcome,
+          input.decisionType,
+          input.reasoning
+        );
+        return { success: true };
+      }),
+
+    // Create agent with personality (using AgentBrain service)
+    createWithPersonality: protectedProcedure
+      .input(
+        z.object({
+          name: z.string().min(2).max(128),
+          type: z.enum(["customer", "supplier", "employee", "partner", "investor", "competitor"]),
+          personaId: z.number(),
+          cityId: z.number(),
+          companyId: z.number().optional(),
+          businessUnitId: z.number().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const company = await getCompanyByUserId(ctx.user.id);
+
+        if (input.companyId && (!company || input.companyId !== company.id)) {
+          throw new Error("Not authorized to create agent for this company");
+        }
+
+        return await agentBrain.createAgentWithPersonality({
+          name: input.name,
+          type: input.type,
+          personaId: input.personaId,
+          cityId: input.cityId,
+          companyId: input.companyId,
+          businessUnitId: input.businessUnitId,
+        });
       }),
   }),
 
@@ -1615,6 +1720,11 @@ export const appRouter = router({
         await deleteApiKey(input.id, ctx.user.id);
         return { success: true };
       }),
+    verify: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        return await verifyApiKey(input.id, ctx.user.id);
+      }),
   }),
 
   // ============================================================================
@@ -1716,6 +1826,114 @@ export const appRouter = router({
       .input(z.object({ scenarioId: z.number() }))
       .query(async ({ input }) => {
         return await getScenarioInteractions(input.scenarioId);
+      }),
+
+    // Add character to scenario
+    addCharacter: protectedProcedure
+      .input(z.object({
+        scenarioId: z.number(),
+        name: z.string().min(1),
+        label: z.string().min(1).regex(/^[a-z0-9_]+$/, "Label must be lowercase letters, numbers, and underscores"),
+        promptDescription: z.string().optional(),
+        isUserCharacter: z.boolean().optional(),
+        orderIndex: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const scenario = await getScenarioById(input.scenarioId);
+        if (!scenario || scenario.userId !== ctx.user.id) {
+          throw new Error("Scenario not found or not authorized");
+        }
+        return await addScenarioCharacter(input);
+      }),
+
+    // Update scenario character
+    updateCharacter: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        scenarioId: z.number(),
+        name: z.string().min(1).optional(),
+        label: z.string().min(1).regex(/^[a-z0-9_]+$/, "Label must be lowercase letters, numbers, and underscores").optional(),
+        promptDescription: z.string().optional(),
+        isUserCharacter: z.boolean().optional(),
+        orderIndex: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const scenario = await getScenarioById(input.scenarioId);
+        if (!scenario || scenario.userId !== ctx.user.id) {
+          throw new Error("Scenario not found or not authorized");
+        }
+        const { id, scenarioId, ...data } = input;
+        await updateScenarioCharacter(id, data);
+        return { success: true };
+      }),
+
+    // Remove character from scenario
+    removeCharacter: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        scenarioId: z.number(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const scenario = await getScenarioById(input.scenarioId);
+        if (!scenario || scenario.userId !== ctx.user.id) {
+          throw new Error("Scenario not found or not authorized");
+        }
+        await deleteScenarioCharacter(input.id);
+        return { success: true };
+      }),
+
+    // Add interaction to scenario
+    addInteraction: protectedProcedure
+      .input(z.object({
+        scenarioId: z.number(),
+        interactionType: z.enum(["message", "text", "instruction"]),
+        characterLabel: z.string().optional(),
+        content: z.string().min(1),
+        isSticky: z.boolean().optional(),
+        orderIndex: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const scenario = await getScenarioById(input.scenarioId);
+        if (!scenario || scenario.userId !== ctx.user.id) {
+          throw new Error("Scenario not found or not authorized");
+        }
+        return await addScenarioInteraction(input);
+      }),
+
+    // Update scenario interaction
+    updateInteraction: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        scenarioId: z.number(),
+        interactionType: z.enum(["message", "text", "instruction"]).optional(),
+        characterLabel: z.string().optional(),
+        content: z.string().min(1).optional(),
+        isSticky: z.boolean().optional(),
+        orderIndex: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const scenario = await getScenarioById(input.scenarioId);
+        if (!scenario || scenario.userId !== ctx.user.id) {
+          throw new Error("Scenario not found or not authorized");
+        }
+        const { id, scenarioId, ...data } = input;
+        await updateScenarioInteraction(id, data);
+        return { success: true };
+      }),
+
+    // Remove interaction from scenario
+    removeInteraction: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        scenarioId: z.number(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const scenario = await getScenarioById(input.scenarioId);
+        if (!scenario || scenario.userId !== ctx.user.id) {
+          throw new Error("Scenario not found or not authorized");
+        }
+        await deleteScenarioInteraction(input.id);
+        return { success: true };
       }),
   }),
 
@@ -1851,6 +2069,70 @@ export const appRouter = router({
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
         await deleteGeneratedImage(input.id, ctx.user.id);
+        return { success: true };
+      }),
+  }),
+
+  // ============================================================================
+  // EVENT BRIDGE ROUTES (Cross-system event propagation)
+  // ============================================================================
+  eventBridge: router({
+    // Get event propagation history
+    history: protectedProcedure
+      .input(z.object({ limit: z.number().optional() }).optional())
+      .query(async ({ input }) => {
+        return await getEventPropagationHistory(input?.limit);
+      }),
+
+    // Get propagation history by source type
+    bySourceType: protectedProcedure
+      .input(z.object({
+        sourceType: z.enum(["business", "narrative"]),
+        limit: z.number().optional(),
+      }))
+      .query(async ({ input }) => {
+        return await getEventPropagationBySourceType(input.sourceType, input.limit);
+      }),
+
+    // Propagate a business event to narrative
+    propagateBusinessEvent: protectedProcedure
+      .input(z.object({
+        type: z.enum(["bankruptcy", "merger", "market_crash", "expansion", "layoff", "innovation", "scandal", "success"]),
+        companyId: z.number(),
+        magnitude: z.number().min(1).max(100),
+        description: z.string(),
+        affectedResources: z.array(z.number()).optional(),
+        affectedCities: z.array(z.number()).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const company = await getCompanyByUserId(ctx.user.id);
+        if (!company || company.id !== input.companyId) {
+          throw new Error("Not authorized to propagate events for this company");
+        }
+        return await eventBridge.propagateBusinessEvent(input as BusinessEvent);
+      }),
+
+    // Propagate a narrative event to business
+    propagateNarrativeEvent: protectedProcedure
+      .input(z.object({
+        type: z.enum(["conflict", "alliance", "betrayal", "discovery", "crisis", "celebration", "tragedy"]),
+        worldId: z.number(),
+        importance: z.number().min(1).max(100),
+        description: z.string(),
+        affectedAgentIds: z.array(z.number()).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const world = await getWorldById(input.worldId);
+        if (!world || world.userId !== ctx.user.id) {
+          throw new Error("Not authorized to propagate events for this world");
+        }
+        return await eventBridge.propagateNarrativeEvent(input as NarrativeEvent);
+      }),
+
+    // Process scheduled events
+    processScheduledEvents: protectedProcedure
+      .mutation(async () => {
+        await eventBridge.processScheduledEvents();
         return { success: true };
       }),
   }),

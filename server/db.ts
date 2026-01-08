@@ -88,6 +88,9 @@ import {
   scheduledWorldEvents,
   InsertScheduledWorldEvent,
   ScheduledWorldEvent,
+  eventPropagation,
+  InsertEventPropagation,
+  EventPropagation,
   // DreamCog storytelling imports
   apiKeys,
   InsertApiKey,
@@ -2632,6 +2635,12 @@ export async function getScenarioCharacters(scenarioId: number) {
     .orderBy(scenarioCharacters.orderIndex);
 }
 
+export async function updateScenarioCharacter(id: number, data: Partial<InsertScenarioCharacter>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(scenarioCharacters).set(data).where(eq(scenarioCharacters.id, id));
+}
+
 export async function deleteScenarioCharacter(id: number) {
   const db = await getDb();
   if (!db) return;
@@ -2959,4 +2968,58 @@ export async function deleteScheduledEventEntry(id: number) {
   const db = await getDb();
   if (!db) return;
   await db.delete(scheduledEvents).where(eq(scheduledEvents.id, id));
+}
+
+// ============ EVENT PROPAGATION HELPERS ============
+
+export async function getEventPropagationHistory(limit = 50): Promise<EventPropagation[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(eventPropagation)
+    .orderBy(desc(eventPropagation.createdAt))
+    .limit(limit);
+}
+
+export async function getEventPropagationBySourceType(sourceType: "business" | "narrative", limit = 50): Promise<EventPropagation[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(eventPropagation)
+    .where(eq(eventPropagation.sourceType, sourceType))
+    .orderBy(desc(eventPropagation.createdAt))
+    .limit(limit);
+}
+
+// ============ API KEY VERIFICATION ============
+
+export async function verifyApiKey(id: number, userId: number): Promise<{ valid: boolean; error?: string }> {
+  const db = await getDb();
+  if (!db) return { valid: false, error: "Database not available" };
+
+  const apiKey = await getApiKeyById(id, userId);
+  if (!apiKey) {
+    return { valid: false, error: "API key not found" };
+  }
+
+  try {
+    // Test the API key against DreamGen API
+    const response = await fetch("https://dreamgen.com/api/v1/models", {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${apiKey.encryptedKey}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (response.ok) {
+      // Update last used timestamp
+      await updateApiKeyLastUsed(id);
+      return { valid: true };
+    } else if (response.status === 401) {
+      return { valid: false, error: "Invalid or expired API key" };
+    } else {
+      return { valid: false, error: `API returned status ${response.status}` };
+    }
+  } catch (error) {
+    return { valid: false, error: error instanceof Error ? error.message : "Unknown error" };
+  }
 }

@@ -23,10 +23,16 @@ export default function WorldEvents() {
     { id: selectedWorldId! },
     { enabled: !!selectedWorldId }
   );
-  // World events and lore queries not implemented yet
-  const worldEvents: any[] = [];
-  const worldLore: any[] = [];
-  const eventHistory: any[] = [];
+  // World events and lore queries
+  const { data: worldEvents = [] } = trpc.worldEvent.byWorld.useQuery(
+    { worldId: selectedWorldId! },
+    { enabled: !!selectedWorldId }
+  );
+  const { data: worldLore = [] } = trpc.lore.byWorld.useQuery(
+    { worldId: selectedWorldId! },
+    { enabled: !!selectedWorldId }
+  );
+  const { data: eventHistory = [] } = trpc.eventBridge.history.useQuery({ limit: 20 });
 
   const createWorldMutation = trpc.world.create.useMutation({
     onSuccess: (world) => {
