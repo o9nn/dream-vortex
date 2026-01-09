@@ -3,6 +3,9 @@ import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { agentBrain, DecisionContext, DecisionOption } from "./services/agentBrain";
+import { eventBridge, BusinessEvent, NarrativeEvent } from "./services/eventBridge";
+import simulationEngine from "./services/simulationEngine";
 import {
   createCompany,
   getCompanyByUserId,
@@ -131,10 +134,27 @@ import {
   deleteScenario,
   addScenarioCharacter,
   getScenarioCharacters,
-  // updateScenarioCharacter, // Not implemented yet
+  updateScenarioCharacter,
   deleteScenarioCharacter,
   addScenarioInteraction,
   getScenarioInteractions,
+  updateScenarioInteraction,
+  deleteScenarioInteraction,
+  getEventPropagationHistory,
+  getEventPropagationBySourceType,
+  verifyApiKey,
+  // Technology functions
+  getAllTechnologies,
+  getTechnologyById,
+  getCompanyTechnologies,
+  startTechnologyResearch,
+  updateTechnologyResearch,
+  hasCompanyResearchedTech,
+  // Game processing functions
+  processTurnAdvancement,
+  processCompanyPayroll,
+  completeProductionItem,
+  getReadyProductionItems,
   createChatSession,
   getChatSessionsByUserId,
   getChatSessionById,
@@ -800,6 +820,104 @@ export const appRouter = router({
       .input(z.object({ agentId: z.number(), limit: z.number().optional() }))
       .query(async ({ input }) => {
         return await getAgentHistory(input.agentId, input.limit);
+      }),
+
+    // Make a decision for an agent using the AgentBrain service
+    makeDecision: protectedProcedure
+      .input(
+        z.object({
+          agentId: z.number(),
+          context: z.object({
+            type: z.enum(["trade", "negotiation", "investment", "hiring", "partnership", "conflict", "cooperation"]),
+            situation: z.string(),
+            options: z.array(z.object({
+              id: z.string(),
+              description: z.string(),
+              expectedOutcome: z.string(),
+              riskLevel: z.number().min(0).max(100),
+              potentialReward: z.number().min(0).max(100),
+              requiresCooperation: z.boolean(),
+              requiresConflict: z.boolean(),
+            })),
+            relatedAgentId: z.number().optional(),
+            relatedCompanyId: z.number().optional(),
+            financialStakes: z.number().optional(),
+            riskLevel: z.number().optional(),
+          }),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const agent = await getAgentById(input.agentId);
+        if (!agent) throw new Error("Agent not found");
+
+        // Verify ownership if agent belongs to a company
+        if (agent.companyId) {
+          const company = await getCompanyByUserId(ctx.user.id);
+          if (!company || agent.companyId !== company.id) {
+            throw new Error("Not authorized");
+          }
+        }
+
+        return await agentBrain.makeDecision(input.agentId, input.context as DecisionContext);
+      }),
+
+    // Process the outcome of a decision
+    processDecisionOutcome: protectedProcedure
+      .input(
+        z.object({
+          agentId: z.number(),
+          outcome: z.enum(["success", "failure", "neutral"]),
+          decisionType: z.string(),
+          reasoning: z.string(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const agent = await getAgentById(input.agentId);
+        if (!agent) throw new Error("Agent not found");
+
+        if (agent.companyId) {
+          const company = await getCompanyByUserId(ctx.user.id);
+          if (!company || agent.companyId !== company.id) {
+            throw new Error("Not authorized");
+          }
+        }
+
+        await agentBrain.processDecisionOutcome(
+          input.agentId,
+          input.outcome,
+          input.decisionType,
+          input.reasoning
+        );
+        return { success: true };
+      }),
+
+    // Create agent with personality (using AgentBrain service)
+    createWithPersonality: protectedProcedure
+      .input(
+        z.object({
+          name: z.string().min(2).max(128),
+          type: z.enum(["customer", "supplier", "employee", "partner", "investor", "competitor"]),
+          personaId: z.number(),
+          cityId: z.number(),
+          companyId: z.number().optional(),
+          businessUnitId: z.number().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const company = await getCompanyByUserId(ctx.user.id);
+
+        if (input.companyId && (!company || input.companyId !== company.id)) {
+          throw new Error("Not authorized to create agent for this company");
+        }
+
+        return await agentBrain.createAgentWithPersonality({
+          name: input.name,
+          type: input.type,
+          personaId: input.personaId,
+          cityId: input.cityId,
+          companyId: input.companyId,
+          businessUnitId: input.businessUnitId,
+        });
       }),
   }),
 
@@ -1615,6 +1733,11 @@ export const appRouter = router({
         await deleteApiKey(input.id, ctx.user.id);
         return { success: true };
       }),
+    verify: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        return await verifyApiKey(input.id, ctx.user.id);
+      }),
   }),
 
   // ============================================================================
@@ -1716,6 +1839,114 @@ export const appRouter = router({
       .input(z.object({ scenarioId: z.number() }))
       .query(async ({ input }) => {
         return await getScenarioInteractions(input.scenarioId);
+      }),
+
+    // Add character to scenario
+    addCharacter: protectedProcedure
+      .input(z.object({
+        scenarioId: z.number(),
+        name: z.string().min(1),
+        label: z.string().min(1).regex(/^[a-z0-9_]+$/, "Label must be lowercase letters, numbers, and underscores"),
+        promptDescription: z.string().optional(),
+        isUserCharacter: z.boolean().optional(),
+        orderIndex: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const scenario = await getScenarioById(input.scenarioId);
+        if (!scenario || scenario.userId !== ctx.user.id) {
+          throw new Error("Scenario not found or not authorized");
+        }
+        return await addScenarioCharacter(input);
+      }),
+
+    // Update scenario character
+    updateCharacter: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        scenarioId: z.number(),
+        name: z.string().min(1).optional(),
+        label: z.string().min(1).regex(/^[a-z0-9_]+$/, "Label must be lowercase letters, numbers, and underscores").optional(),
+        promptDescription: z.string().optional(),
+        isUserCharacter: z.boolean().optional(),
+        orderIndex: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const scenario = await getScenarioById(input.scenarioId);
+        if (!scenario || scenario.userId !== ctx.user.id) {
+          throw new Error("Scenario not found or not authorized");
+        }
+        const { id, scenarioId, ...data } = input;
+        await updateScenarioCharacter(id, data);
+        return { success: true };
+      }),
+
+    // Remove character from scenario
+    removeCharacter: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        scenarioId: z.number(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const scenario = await getScenarioById(input.scenarioId);
+        if (!scenario || scenario.userId !== ctx.user.id) {
+          throw new Error("Scenario not found or not authorized");
+        }
+        await deleteScenarioCharacter(input.id);
+        return { success: true };
+      }),
+
+    // Add interaction to scenario
+    addInteraction: protectedProcedure
+      .input(z.object({
+        scenarioId: z.number(),
+        interactionType: z.enum(["message", "text", "instruction"]),
+        characterLabel: z.string().optional(),
+        content: z.string().min(1),
+        isSticky: z.boolean().optional(),
+        orderIndex: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const scenario = await getScenarioById(input.scenarioId);
+        if (!scenario || scenario.userId !== ctx.user.id) {
+          throw new Error("Scenario not found or not authorized");
+        }
+        return await addScenarioInteraction(input);
+      }),
+
+    // Update scenario interaction
+    updateInteraction: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        scenarioId: z.number(),
+        interactionType: z.enum(["message", "text", "instruction"]).optional(),
+        characterLabel: z.string().optional(),
+        content: z.string().min(1).optional(),
+        isSticky: z.boolean().optional(),
+        orderIndex: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const scenario = await getScenarioById(input.scenarioId);
+        if (!scenario || scenario.userId !== ctx.user.id) {
+          throw new Error("Scenario not found or not authorized");
+        }
+        const { id, scenarioId, ...data } = input;
+        await updateScenarioInteraction(id, data);
+        return { success: true };
+      }),
+
+    // Remove interaction from scenario
+    removeInteraction: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        scenarioId: z.number(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const scenario = await getScenarioById(input.scenarioId);
+        if (!scenario || scenario.userId !== ctx.user.id) {
+          throw new Error("Scenario not found or not authorized");
+        }
+        await deleteScenarioInteraction(input.id);
+        return { success: true };
       }),
   }),
 
@@ -1852,6 +2083,280 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         await deleteGeneratedImage(input.id, ctx.user.id);
         return { success: true };
+      }),
+  }),
+
+  // ============================================================================
+  // EVENT BRIDGE ROUTES (Cross-system event propagation)
+  // ============================================================================
+  eventBridge: router({
+    // Get event propagation history
+    history: protectedProcedure
+      .input(z.object({ limit: z.number().optional() }).optional())
+      .query(async ({ input }) => {
+        return await getEventPropagationHistory(input?.limit);
+      }),
+
+    // Get propagation history by source type
+    bySourceType: protectedProcedure
+      .input(z.object({
+        sourceType: z.enum(["business", "narrative"]),
+        limit: z.number().optional(),
+      }))
+      .query(async ({ input }) => {
+        return await getEventPropagationBySourceType(input.sourceType, input.limit);
+      }),
+
+    // Propagate a business event to narrative
+    propagateBusinessEvent: protectedProcedure
+      .input(z.object({
+        type: z.enum(["bankruptcy", "merger", "market_crash", "expansion", "layoff", "innovation", "scandal", "success"]),
+        companyId: z.number(),
+        magnitude: z.number().min(1).max(100),
+        description: z.string(),
+        affectedResources: z.array(z.number()).optional(),
+        affectedCities: z.array(z.number()).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const company = await getCompanyByUserId(ctx.user.id);
+        if (!company || company.id !== input.companyId) {
+          throw new Error("Not authorized to propagate events for this company");
+        }
+        return await eventBridge.propagateBusinessEvent(input as BusinessEvent);
+      }),
+
+    // Propagate a narrative event to business
+    propagateNarrativeEvent: protectedProcedure
+      .input(z.object({
+        type: z.enum(["conflict", "alliance", "betrayal", "discovery", "crisis", "celebration", "tragedy"]),
+        worldId: z.number(),
+        importance: z.number().min(1).max(100),
+        description: z.string(),
+        affectedAgentIds: z.array(z.number()).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const world = await getWorldById(input.worldId);
+        if (!world || world.userId !== ctx.user.id) {
+          throw new Error("Not authorized to propagate events for this world");
+        }
+        return await eventBridge.propagateNarrativeEvent(input as NarrativeEvent);
+      }),
+
+    // Process scheduled events
+    processScheduledEvents: protectedProcedure
+      .mutation(async () => {
+        await eventBridge.processScheduledEvents();
+        return { success: true };
+      }),
+  }),
+
+  // ============================================================================
+  // SIMULATION ENGINE ROUTES (Sims-inspired life mechanics)
+  // ============================================================================
+  simulation: router({
+    // Get agent simulation state (needs, skills, mood)
+    state: protectedProcedure
+      .input(z.object({ agentId: z.number() }))
+      .query(async ({ input }) => {
+        return await simulationEngine.getSimulationState(input.agentId);
+      }),
+
+    // Get available actions for an agent
+    availableActions: protectedProcedure
+      .input(z.object({ agentId: z.number() }))
+      .query(async ({ input }) => {
+        const state = await simulationEngine.getSimulationState(input.agentId);
+        if (!state) return [];
+        return simulationEngine.getAvailableActions(state);
+      }),
+
+    // Get recommended actions based on current needs
+    recommendedActions: protectedProcedure
+      .input(z.object({ agentId: z.number() }))
+      .query(async ({ input }) => {
+        const state = await simulationEngine.getSimulationState(input.agentId);
+        if (!state) return [];
+        return simulationEngine.getRecommendedActions(state);
+      }),
+
+    // Execute an action for an agent
+    executeAction: protectedProcedure
+      .input(z.object({
+        agentId: z.number(),
+        actionId: z.string(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const agent = await getAgentById(input.agentId);
+        if (!agent) throw new Error("Agent not found");
+
+        // Verify ownership if agent belongs to a company
+        if (agent.companyId) {
+          const company = await getCompanyByUserId(ctx.user.id);
+          if (!company || agent.companyId !== company.id) {
+            throw new Error("Not authorized");
+          }
+        }
+
+        return await simulationEngine.executeAction(input.agentId, input.actionId);
+      }),
+
+    // Simulate time passage for an agent
+    simulateTime: protectedProcedure
+      .input(z.object({
+        agentId: z.number(),
+        minutes: z.number().min(1).max(1440), // max 24 hours
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const agent = await getAgentById(input.agentId);
+        if (!agent) throw new Error("Agent not found");
+
+        if (agent.companyId) {
+          const company = await getCompanyByUserId(ctx.user.id);
+          if (!company || agent.companyId !== company.id) {
+            throw new Error("Not authorized");
+          }
+        }
+
+        return await simulationEngine.simulateTimePassage(input.agentId, input.minutes);
+      }),
+
+    // Generate an autonomous action recommendation
+    generateAutonomousAction: protectedProcedure
+      .input(z.object({ agentId: z.number() }))
+      .query(async ({ input }) => {
+        return await simulationEngine.generateAutonomousAction(input.agentId);
+      }),
+
+    // Get all available simulation actions (static list)
+    allActions: publicProcedure.query(() => {
+      return simulationEngine.SIMULATION_ACTIONS;
+    }),
+  }),
+
+  // ============================================================================
+  // TECHNOLOGY RESEARCH ROUTES
+  // ============================================================================
+  technology: router({
+    // List all available technologies
+    list: protectedProcedure.query(async () => {
+      return await getAllTechnologies();
+    }),
+
+    // Get specific technology details
+    byId: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return await getTechnologyById(input.id);
+      }),
+
+    // Get company's researched and in-progress technologies
+    companyTechnologies: protectedProcedure.query(async ({ ctx }) => {
+      const company = await getCompanyByUserId(ctx.user.id);
+      if (!company) return [];
+      return await getCompanyTechnologies(company.id);
+    }),
+
+    // Start researching a technology
+    startResearch: protectedProcedure
+      .input(z.object({ technologyId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const company = await getCompanyByUserId(ctx.user.id);
+        if (!company) throw new Error("Company not found");
+
+        // Check if technology exists
+        const tech = await getTechnologyById(input.technologyId);
+        if (!tech) throw new Error("Technology not found");
+
+        // Check prerequisites (prerequisites is an array of tech IDs)
+        if (tech.prerequisites && tech.prerequisites.length > 0) {
+          for (const prereqId of tech.prerequisites) {
+            const hasPrereq = await hasCompanyResearchedTech(company.id, prereqId);
+            if (!hasPrereq) throw new Error("Prerequisite technology not researched");
+          }
+        }
+
+        // Check research cost against company cash
+        const researchCost = tech.researchCost;
+        if (parseFloat(company.cash) < researchCost) {
+          throw new Error("Insufficient funds for research");
+        }
+
+        // Deduct research cost
+        const newCash = parseFloat(company.cash) - researchCost;
+        await updateCompanyCash(company.id, newCash.toFixed(2));
+
+        // Create transaction
+        await createTransaction({
+          companyId: company.id,
+          type: "other",
+          amount: researchCost.toFixed(2),
+          description: `Research started: ${tech.name}`,
+        });
+
+        return await startTechnologyResearch(company.id, input.technologyId);
+      }),
+
+    // Check if company has researched a technology
+    hasResearched: protectedProcedure
+      .input(z.object({ technologyId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const company = await getCompanyByUserId(ctx.user.id);
+        if (!company) return false;
+        return await hasCompanyResearchedTech(company.id, input.technologyId);
+      }),
+  }),
+
+  // ============================================================================
+  // GAME TURN PROCESSING ROUTES
+  // ============================================================================
+  gameTurn: router({
+    // Advance the game by one turn (processes production, payroll, research)
+    advance: protectedProcedure.mutation(async ({ ctx }) => {
+      // Only allow admin or owner to advance turns
+      const company = await getCompanyByUserId(ctx.user.id);
+      if (!company) throw new Error("Company not found");
+
+      return await processTurnAdvancement();
+    }),
+
+    // Process payroll for the current user's company
+    processPayroll: protectedProcedure.mutation(async ({ ctx }) => {
+      const company = await getCompanyByUserId(ctx.user.id);
+      if (!company) throw new Error("Company not found");
+
+      return await processCompanyPayroll(company.id);
+    }),
+
+    // Get ready production items for processing
+    readyProduction: protectedProcedure.query(async ({ ctx }) => {
+      const company = await getCompanyByUserId(ctx.user.id);
+      if (!company) return [];
+
+      const units = await getBusinessUnitsByCompany(company.id);
+      const unitIds = units.map(u => u.id);
+
+      const allReady = await getReadyProductionItems();
+      return allReady.filter(item => unitIds.includes(item.queue.businessUnitId));
+    }),
+
+    // Complete a specific production item
+    completeProduction: protectedProcedure
+      .input(z.object({ queueItemId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const company = await getCompanyByUserId(ctx.user.id);
+        if (!company) throw new Error("Company not found");
+
+        // Verify ownership
+        const allReady = await getReadyProductionItems();
+        const item = allReady.find(i => i.queue.id === input.queueItemId);
+        if (!item) throw new Error("Production item not found or not ready");
+
+        const units = await getBusinessUnitsByCompany(company.id);
+        if (!units.some(u => u.id === item.queue.businessUnitId)) {
+          throw new Error("Not authorized to complete this production");
+        }
+
+        return await completeProductionItem(input.queueItemId);
       }),
   }),
 });

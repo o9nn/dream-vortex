@@ -40,11 +40,13 @@ export default function ScenarioEditor() {
   );
   const createMutation = trpc.scenarios.create.useMutation();
   const updateMutation = trpc.scenarios.update.useMutation();
-  // Character and interaction mutations not fully implemented yet
-  // const addCharacterMutation = trpc.scenarios.addCharacter.useMutation();
-  // const removeCharacterMutation = trpc.scenarios.removeCharacter.useMutation();
-  // const addInteractionMutation = trpc.scenarios.addInteraction.useMutation();
-  // const removeInteractionMutation = trpc.scenarios.removeInteraction.useMutation();
+  // Character and interaction mutations
+  const addCharacterMutation = trpc.scenarios.addCharacter.useMutation();
+  const updateCharacterMutation = trpc.scenarios.updateCharacter.useMutation();
+  const removeCharacterMutation = trpc.scenarios.removeCharacter.useMutation();
+  const addInteractionMutation = trpc.scenarios.addInteraction.useMutation();
+  const updateInteractionMutation = trpc.scenarios.updateInteraction.useMutation();
+  const removeInteractionMutation = trpc.scenarios.removeInteraction.useMutation();
 
   const [title, setTitle] = useState("");
   const [promptDescription, setPromptDescription] = useState("");
@@ -143,19 +145,28 @@ export default function ScenarioEditor() {
 
     try {
       if (!char.id) {
-        // Character mutations not yet implemented
-        toast.info("Character saving not yet implemented");
-        const result = { id: Date.now() }; /* await addCharacterMutation.mutateAsync({
+        const result = await addCharacterMutation.mutateAsync({
           scenarioId: currentScenarioId,
           name: char.name,
           label: char.label,
           promptDescription: char.promptDescription,
           isUserCharacter: char.isUserCharacter,
-        }); */
+          orderIndex: index,
+        });
         setCharacters(prev => {
           const newChars = [...prev];
-          newChars[index] = { ...newChars[index], id: result.id };
+          newChars[index] = { ...newChars[index], id: result as number };
           return newChars;
+        });
+      } else {
+        await updateCharacterMutation.mutateAsync({
+          id: char.id,
+          scenarioId: currentScenarioId,
+          name: char.name,
+          label: char.label,
+          promptDescription: char.promptDescription,
+          isUserCharacter: char.isUserCharacter,
+          orderIndex: index,
         });
       }
       toast.success("Character saved");
@@ -166,10 +177,9 @@ export default function ScenarioEditor() {
 
   const handleRemoveCharacter = async (index: number) => {
     const char = characters[index];
-    if (char.id) {
+    if (char.id && currentScenarioId) {
       try {
-        // await removeCharacterMutation.mutateAsync({ id: char.id });
-        toast.info("Character removal not yet implemented");
+        await removeCharacterMutation.mutateAsync({ id: char.id, scenarioId: currentScenarioId });
       } catch (error) {
         toast.error("Failed to remove character");
         return;
@@ -202,20 +212,28 @@ export default function ScenarioEditor() {
 
     try {
       if (!interaction.id) {
-        // Interaction mutations not yet implemented
-        toast.info("Interaction saving not yet implemented");
-        const result = { id: Date.now() }; /* await addInteractionMutation.mutateAsync({
+        const result = await addInteractionMutation.mutateAsync({
           scenarioId: currentScenarioId,
           interactionType: interaction.interactionType,
           characterLabel: interaction.characterLabel,
           content: interaction.content,
           isSticky: interaction.isSticky,
           orderIndex: index,
-        }); */
+        });
         setInteractions(prev => {
           const newInteractions = [...prev];
-          newInteractions[index] = { ...newInteractions[index], id: result.id };
+          newInteractions[index] = { ...newInteractions[index], id: result as number };
           return newInteractions;
+        });
+      } else {
+        await updateInteractionMutation.mutateAsync({
+          id: interaction.id,
+          scenarioId: currentScenarioId,
+          interactionType: interaction.interactionType,
+          characterLabel: interaction.characterLabel,
+          content: interaction.content,
+          isSticky: interaction.isSticky,
+          orderIndex: index,
         });
       }
       toast.success("Interaction saved");
@@ -226,10 +244,9 @@ export default function ScenarioEditor() {
 
   const handleRemoveInteraction = async (index: number) => {
     const interaction = interactions[index];
-    if (interaction.id) {
+    if (interaction.id && currentScenarioId) {
       try {
-        // await removeInteractionMutation.mutateAsync({ id: interaction.id });
-        toast.info("Interaction removal not yet implemented");
+        await removeInteractionMutation.mutateAsync({ id: interaction.id, scenarioId: currentScenarioId });
       } catch (error) {
         toast.error("Failed to remove interaction");
         return;
