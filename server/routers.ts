@@ -5,6 +5,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { agentBrain, DecisionContext, DecisionOption } from "./services/agentBrain";
 import { eventBridge, BusinessEvent, NarrativeEvent } from "./services/eventBridge";
+import simulationEngine from "./services/simulationEngine";
 import {
   createCompany,
   getCompanyByUserId,
@@ -142,6 +143,18 @@ import {
   getEventPropagationHistory,
   getEventPropagationBySourceType,
   verifyApiKey,
+  // Technology functions
+  getAllTechnologies,
+  getTechnologyById,
+  getCompanyTechnologies,
+  startTechnologyResearch,
+  updateTechnologyResearch,
+  hasCompanyResearchedTech,
+  // Game processing functions
+  processTurnAdvancement,
+  processCompanyPayroll,
+  completeProductionItem,
+  getReadyProductionItems,
   createChatSession,
   getChatSessionsByUserId,
   getChatSessionById,
@@ -2134,6 +2147,214 @@ export const appRouter = router({
       .mutation(async () => {
         await eventBridge.processScheduledEvents();
         return { success: true };
+      }),
+  }),
+
+  // ============================================================================
+  // SIMULATION ENGINE ROUTES (Sims-inspired life mechanics)
+  // ============================================================================
+  simulation: router({
+    // Get agent simulation state (needs, skills, mood)
+    state: protectedProcedure
+      .input(z.object({ agentId: z.number() }))
+      .query(async ({ input }) => {
+        return await simulationEngine.getSimulationState(input.agentId);
+      }),
+
+    // Get available actions for an agent
+    availableActions: protectedProcedure
+      .input(z.object({ agentId: z.number() }))
+      .query(async ({ input }) => {
+        const state = await simulationEngine.getSimulationState(input.agentId);
+        if (!state) return [];
+        return simulationEngine.getAvailableActions(state);
+      }),
+
+    // Get recommended actions based on current needs
+    recommendedActions: protectedProcedure
+      .input(z.object({ agentId: z.number() }))
+      .query(async ({ input }) => {
+        const state = await simulationEngine.getSimulationState(input.agentId);
+        if (!state) return [];
+        return simulationEngine.getRecommendedActions(state);
+      }),
+
+    // Execute an action for an agent
+    executeAction: protectedProcedure
+      .input(z.object({
+        agentId: z.number(),
+        actionId: z.string(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const agent = await getAgentById(input.agentId);
+        if (!agent) throw new Error("Agent not found");
+
+        // Verify ownership if agent belongs to a company
+        if (agent.companyId) {
+          const company = await getCompanyByUserId(ctx.user.id);
+          if (!company || agent.companyId !== company.id) {
+            throw new Error("Not authorized");
+          }
+        }
+
+        return await simulationEngine.executeAction(input.agentId, input.actionId);
+      }),
+
+    // Simulate time passage for an agent
+    simulateTime: protectedProcedure
+      .input(z.object({
+        agentId: z.number(),
+        minutes: z.number().min(1).max(1440), // max 24 hours
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const agent = await getAgentById(input.agentId);
+        if (!agent) throw new Error("Agent not found");
+
+        if (agent.companyId) {
+          const company = await getCompanyByUserId(ctx.user.id);
+          if (!company || agent.companyId !== company.id) {
+            throw new Error("Not authorized");
+          }
+        }
+
+        return await simulationEngine.simulateTimePassage(input.agentId, input.minutes);
+      }),
+
+    // Generate an autonomous action recommendation
+    generateAutonomousAction: protectedProcedure
+      .input(z.object({ agentId: z.number() }))
+      .query(async ({ input }) => {
+        return await simulationEngine.generateAutonomousAction(input.agentId);
+      }),
+
+    // Get all available simulation actions (static list)
+    allActions: publicProcedure.query(() => {
+      return simulationEngine.SIMULATION_ACTIONS;
+    }),
+  }),
+
+  // ============================================================================
+  // TECHNOLOGY RESEARCH ROUTES
+  // ============================================================================
+  technology: router({
+    // List all available technologies
+    list: protectedProcedure.query(async () => {
+      return await getAllTechnologies();
+    }),
+
+    // Get specific technology details
+    byId: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return await getTechnologyById(input.id);
+      }),
+
+    // Get company's researched and in-progress technologies
+    companyTechnologies: protectedProcedure.query(async ({ ctx }) => {
+      const company = await getCompanyByUserId(ctx.user.id);
+      if (!company) return [];
+      return await getCompanyTechnologies(company.id);
+    }),
+
+    // Start researching a technology
+    startResearch: protectedProcedure
+      .input(z.object({ technologyId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const company = await getCompanyByUserId(ctx.user.id);
+        if (!company) throw new Error("Company not found");
+
+        // Check if technology exists
+        const tech = await getTechnologyById(input.technologyId);
+        if (!tech) throw new Error("Technology not found");
+
+        // Check prerequisites
+        if (tech.prerequisiteId) {
+          const hasPrereq = await hasCompanyResearchedTech(company.id, tech.prerequisiteId);
+          if (!hasPrereq) throw new Error("Prerequisite technology not researched");
+        }
+
+        // Check research cost against company cash
+        const researchCost = parseFloat(tech.researchCost);
+        if (parseFloat(company.cash) < researchCost) {
+          throw new Error("Insufficient funds for research");
+        }
+
+        // Deduct research cost
+        const newCash = parseFloat(company.cash) - researchCost;
+        await updateCompanyCash(company.id, newCash.toFixed(2));
+
+        // Create transaction
+        await createTransaction({
+          companyId: company.id,
+          type: "expense",
+          amount: tech.researchCost,
+          description: `Research started: ${tech.name}`,
+        });
+
+        return await startTechnologyResearch(company.id, input.technologyId);
+      }),
+
+    // Check if company has researched a technology
+    hasResearched: protectedProcedure
+      .input(z.object({ technologyId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const company = await getCompanyByUserId(ctx.user.id);
+        if (!company) return false;
+        return await hasCompanyResearchedTech(company.id, input.technologyId);
+      }),
+  }),
+
+  // ============================================================================
+  // GAME TURN PROCESSING ROUTES
+  // ============================================================================
+  gameTurn: router({
+    // Advance the game by one turn (processes production, payroll, research)
+    advance: protectedProcedure.mutation(async ({ ctx }) => {
+      // Only allow admin or owner to advance turns
+      const company = await getCompanyByUserId(ctx.user.id);
+      if (!company) throw new Error("Company not found");
+
+      return await processTurnAdvancement();
+    }),
+
+    // Process payroll for the current user's company
+    processPayroll: protectedProcedure.mutation(async ({ ctx }) => {
+      const company = await getCompanyByUserId(ctx.user.id);
+      if (!company) throw new Error("Company not found");
+
+      return await processCompanyPayroll(company.id);
+    }),
+
+    // Get ready production items for processing
+    readyProduction: protectedProcedure.query(async ({ ctx }) => {
+      const company = await getCompanyByUserId(ctx.user.id);
+      if (!company) return [];
+
+      const units = await getBusinessUnitsByCompany(company.id);
+      const unitIds = units.map(u => u.id);
+
+      const allReady = await getReadyProductionItems();
+      return allReady.filter(item => unitIds.includes(item.queue.businessUnitId));
+    }),
+
+    // Complete a specific production item
+    completeProduction: protectedProcedure
+      .input(z.object({ queueItemId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const company = await getCompanyByUserId(ctx.user.id);
+        if (!company) throw new Error("Company not found");
+
+        // Verify ownership
+        const allReady = await getReadyProductionItems();
+        const item = allReady.find(i => i.queue.id === input.queueItemId);
+        if (!item) throw new Error("Production item not found or not ready");
+
+        const units = await getBusinessUnitsByCompany(company.id);
+        if (!units.some(u => u.id === item.queue.businessUnitId)) {
+          throw new Error("Not authorized to complete this production");
+        }
+
+        return await completeProductionItem(input.queueItemId);
       }),
   }),
 });

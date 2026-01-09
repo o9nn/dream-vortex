@@ -649,6 +649,275 @@ export async function incrementGameTurn(): Promise<void> {
       lastTurnProcessed: new Date(),
     });
 }
+
+// ============================================================================
+// TECHNOLOGY RESEARCH OPERATIONS
+// ============================================================================
+export async function getAllTechnologies() {
+  const db = await getDb();
+  if (!db) return [];
+
+  return await db.select().from(technologies).orderBy(technologies.tier, technologies.name);
+}
+
+export async function getTechnologyById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const result = await db.select().from(technologies).where(eq(technologies.id, id)).limit(1);
+  return result[0] || null;
+}
+
+export async function getCompanyTechnologies(companyId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return await db
+    .select({
+      companyTech: companyTechnologies,
+      technology: technologies,
+    })
+    .from(companyTechnologies)
+    .leftJoin(technologies, eq(companyTechnologies.technologyId, technologies.id))
+    .where(eq(companyTechnologies.companyId, companyId));
+}
+
+export async function startTechnologyResearch(companyId: number, technologyId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  // Check if already researching
+  const existing = await db
+    .select()
+    .from(companyTechnologies)
+    .where(and(
+      eq(companyTechnologies.companyId, companyId),
+      eq(companyTechnologies.technologyId, technologyId)
+    ))
+    .limit(1);
+
+  if (existing.length > 0) {
+    return existing[0];
+  }
+
+  const result = await db.insert(companyTechnologies).values({
+    companyId,
+    technologyId,
+    researchProgress: "0.00",
+    researchStarted: new Date(),
+    isResearching: true,
+  });
+
+  const created = await db
+    .select()
+    .from(companyTechnologies)
+    .where(eq(companyTechnologies.id, result[0].insertId))
+    .limit(1);
+
+  return created[0] || null;
+}
+
+export async function updateTechnologyResearch(
+  companyId: number,
+  technologyId: number,
+  progress: number
+) {
+  const db = await getDb();
+  if (!db) return;
+
+  const isComplete = progress >= 100;
+
+  await db
+    .update(companyTechnologies)
+    .set({
+      researchProgress: Math.min(100, progress).toFixed(2),
+      isResearching: !isComplete,
+      researchCompleted: isComplete ? new Date() : null,
+    })
+    .where(and(
+      eq(companyTechnologies.companyId, companyId),
+      eq(companyTechnologies.technologyId, technologyId)
+    ));
+}
+
+export async function hasCompanyResearchedTech(companyId: number, technologyId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+
+  const result = await db
+    .select()
+    .from(companyTechnologies)
+    .where(and(
+      eq(companyTechnologies.companyId, companyId),
+      eq(companyTechnologies.technologyId, technologyId),
+      sql`${companyTechnologies.researchProgress} >= 100`
+    ))
+    .limit(1);
+
+  return result.length > 0;
+}
+
+// ============================================================================
+// PRODUCTION COMPLETION OPERATIONS
+// ============================================================================
+export async function completeProductionItem(queueItemId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  // Get the queue item with recipe
+  const [queueItem] = await db
+    .select({
+      queue: productionQueue,
+      recipe: productionRecipes,
+    })
+    .from(productionQueue)
+    .leftJoin(productionRecipes, eq(productionQueue.recipeId, productionRecipes.id))
+    .where(eq(productionQueue.id, queueItemId))
+    .limit(1);
+
+  if (!queueItem || !queueItem.recipe) return null;
+
+  // Add output to inventory
+  await upsertInventory({
+    businessUnitId: queueItem.queue.businessUnitId,
+    resourceTypeId: queueItem.recipe.outputResourceId,
+    quantity: parseFloat(queueItem.queue.quantity) * parseFloat(queueItem.recipe.outputQuantity),
+  });
+
+  // Remove from queue
+  await db.delete(productionQueue).where(eq(productionQueue.id, queueItemId));
+
+  return {
+    businessUnitId: queueItem.queue.businessUnitId,
+    outputResourceId: queueItem.recipe.outputResourceId,
+    outputQuantity: parseFloat(queueItem.queue.quantity) * parseFloat(queueItem.recipe.outputQuantity),
+  };
+}
+
+export async function getReadyProductionItems() {
+  const db = await getDb();
+  if (!db) return [];
+
+  // Get items that have been in queue long enough (based on recipe production time)
+  // For simplicity, consider items older than 1 hour as ready
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+
+  return await db
+    .select({
+      queue: productionQueue,
+      recipe: productionRecipes,
+    })
+    .from(productionQueue)
+    .leftJoin(productionRecipes, eq(productionQueue.recipeId, productionRecipes.id))
+    .where(sql`${productionQueue.createdAt} < ${oneHourAgo}`);
+}
+
+// ============================================================================
+// EMPLOYEE PAYROLL OPERATIONS
+// ============================================================================
+export async function processCompanyPayroll(companyId: number): Promise<{ totalPayroll: number; employeeCount: number }> {
+  const db = await getDb();
+  if (!db) return { totalPayroll: 0, employeeCount: 0 };
+
+  // Get company's business units
+  const units = await getBusinessUnitsByCompany(companyId);
+
+  let totalPayroll = 0;
+  let employeeCount = 0;
+
+  for (const unit of units) {
+    const employeeData = await getEmployeesByUnit(unit.id);
+    if (employeeData) {
+      const salary = parseFloat(employeeData.averageSalary) * employeeData.count;
+      totalPayroll += salary;
+      employeeCount += employeeData.count;
+    }
+  }
+
+  // Deduct from company cash
+  const company = await getCompanyById(companyId);
+  if (company) {
+    const newCash = parseFloat(company.cash) - totalPayroll;
+    await updateCompanyCash(companyId, newCash.toFixed(2));
+
+    // Create transaction record
+    await createTransaction({
+      companyId,
+      type: "expense",
+      amount: totalPayroll.toFixed(2),
+      description: `Payroll for ${employeeCount} employees`,
+    });
+  }
+
+  return { totalPayroll, employeeCount };
+}
+
+export async function processAllCompaniesPayroll(): Promise<Array<{ companyId: number; totalPayroll: number; employeeCount: number }>> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const allCompanies = await getAllCompanies();
+  const results: Array<{ companyId: number; totalPayroll: number; employeeCount: number }> = [];
+
+  for (const company of allCompanies) {
+    const result = await processCompanyPayroll(company.id);
+    results.push({ companyId: company.id, ...result });
+  }
+
+  return results;
+}
+
+// ============================================================================
+// GAME TURN PROCESSING
+// ============================================================================
+export async function processTurnAdvancement(): Promise<{
+  turn: number;
+  productionCompleted: number;
+  payrollProcessed: Array<{ companyId: number; totalPayroll: number; employeeCount: number }>;
+  researchAdvanced: number;
+}> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // 1. Increment turn
+  await incrementGameTurn();
+  const state = await getGameState();
+  const turn = state?.currentTurn || 1;
+
+  // 2. Process completed production
+  const readyItems = await getReadyProductionItems();
+  let productionCompleted = 0;
+  for (const item of readyItems) {
+    await completeProductionItem(item.queue.id);
+    productionCompleted++;
+  }
+
+  // 3. Process payroll
+  const payrollProcessed = await processAllCompaniesPayroll();
+
+  // 4. Advance research progress
+  let researchAdvanced = 0;
+  const allCompanies = await getAllCompanies();
+  for (const company of allCompanies) {
+    const companyTechs = await getCompanyTechnologies(company.id);
+    for (const tech of companyTechs) {
+      if (tech.companyTech.isResearching) {
+        const currentProgress = parseFloat(tech.companyTech.researchProgress);
+        // Advance by 10% per turn (can be modified by research speed bonuses)
+        const newProgress = currentProgress + 10;
+        await updateTechnologyResearch(company.id, tech.companyTech.technologyId, newProgress);
+        researchAdvanced++;
+      }
+    }
+  }
+
+  return {
+    turn,
+    productionCompleted,
+    payrollProcessed,
+    researchAdvanced,
+  };
+}
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
