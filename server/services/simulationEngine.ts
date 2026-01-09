@@ -253,11 +253,10 @@ const SIMULATION_ACTIONS: SimulationAction[] = [
  */
 export async function getSimulationState(agentId: number): Promise<SimulationState | null> {
   const db = await getDb();
-  
-  const agent = await db.query.agents.findFirst({
-    where: eq(agents.id, agentId),
-  });
-  
+  if (!db) return null;
+
+  const [agent] = await db.select().from(agents).where(eq(agents.id, agentId)).limit(1);
+
   if (!agent) return null;
   
   // Map agent emotional state to simulation needs
@@ -412,10 +411,10 @@ export async function executeAction(
   }
   
   // Update agent in database
-  const agent = await db.query.agents.findFirst({
-    where: eq(agents.id, agentId),
-  });
-  
+  if (!db) return { success: false, error: 'Database not available' };
+
+  const [agent] = await db.select().from(agents).where(eq(agents.id, agentId)).limit(1);
+
   if (agent) {
     await db.update(agents)
       .set({
@@ -427,14 +426,14 @@ export async function executeAction(
         updatedAt: new Date(),
       })
       .where(eq(agents.id, agentId));
-    
-    // Create memory of action
+
+    // Create memory of action (using 'event' type since 'action' is not in schema)
     await db.insert(agentMemories).values({
       agentId,
-      memoryType: 'action',
+      memoryType: 'event',
       content: `Performed action: ${action.name}`,
-      importance: 30,
-      emotionalValence: action.needEffects.fun > 0 ? 'positive' : 'neutral',
+      importance: 3,
+      emotionalImpact: action.needEffects.fun > 0 ? 20 : 0,
       memoryDate: new Date(),
     });
   }
@@ -452,19 +451,20 @@ export async function simulateTimePassage(
   minutesPassed: number
 ): Promise<SimulationState | null> {
   const db = await getDb();
-  
+  if (!db) return null;
+
   const state = await getSimulationState(agentId);
   if (!state) return null;
-  
+
   const hoursPassed = minutesPassed / 60;
-  
+
   // Apply need decay
   const newNeeds = { ...state.needs };
   for (const [need, rate] of Object.entries(NEED_DECAY_RATES)) {
     const decay = rate * hoursPassed;
     newNeeds[need] = Math.max(0, (newNeeds[need] || 50) - decay);
   }
-  
+
   // Update agent
   await db.update(agents)
     .set({
@@ -476,7 +476,7 @@ export async function simulateTimePassage(
       updatedAt: new Date(),
     })
     .where(eq(agents.id, agentId));
-  
+
   return getSimulationState(agentId);
 }
 

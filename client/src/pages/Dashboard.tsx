@@ -394,25 +394,25 @@ export default function Dashboard() {
                       <div className="flex items-center justify-between mb-2">
                         <span className="font-medium">{tech.technology?.name || "Unknown"}</span>
                         <span className={`text-sm ${
-                          parseFloat(tech.companyTech.researchProgress) >= 100
+                          tech.companyTech.isCompleted
                             ? "text-success"
-                            : tech.companyTech.isResearching
+                            : tech.companyTech.researchProgress > 0
                               ? "text-amber-500"
                               : "text-muted-foreground"
                         }`}>
-                          {parseFloat(tech.companyTech.researchProgress) >= 100
+                          {tech.companyTech.isCompleted
                             ? "Complete"
-                            : `${Math.round(parseFloat(tech.companyTech.researchProgress))}%`}
+                            : `${tech.companyTech.researchProgress}%`}
                         </span>
                       </div>
                       <div className="w-full bg-muted rounded-full h-2">
                         <div
                           className={`h-2 rounded-full ${
-                            parseFloat(tech.companyTech.researchProgress) >= 100
+                            tech.companyTech.isCompleted
                               ? "bg-success"
                               : "bg-amber-500"
                           }`}
-                          style={{ width: `${Math.min(100, parseFloat(tech.companyTech.researchProgress))}%` }}
+                          style={{ width: `${Math.min(100, tech.companyTech.researchProgress)}%` }}
                         />
                       </div>
                     </div>
@@ -447,7 +447,7 @@ export default function Dashboard() {
                       className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
                     >
                       <div>
-                        <p className="font-medium">{item.recipe?.name || "Production Item"}</p>
+                        <p className="font-medium">{item.recipe?.description || "Production Item"}</p>
                         <p className="text-sm text-muted-foreground">
                           Quantity: {parseFloat(item.queue.quantity).toFixed(0)}
                         </p>

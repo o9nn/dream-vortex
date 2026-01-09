@@ -2267,14 +2267,16 @@ export const appRouter = router({
         const tech = await getTechnologyById(input.technologyId);
         if (!tech) throw new Error("Technology not found");
 
-        // Check prerequisites
-        if (tech.prerequisiteId) {
-          const hasPrereq = await hasCompanyResearchedTech(company.id, tech.prerequisiteId);
-          if (!hasPrereq) throw new Error("Prerequisite technology not researched");
+        // Check prerequisites (prerequisites is an array of tech IDs)
+        if (tech.prerequisites && tech.prerequisites.length > 0) {
+          for (const prereqId of tech.prerequisites) {
+            const hasPrereq = await hasCompanyResearchedTech(company.id, prereqId);
+            if (!hasPrereq) throw new Error("Prerequisite technology not researched");
+          }
         }
 
         // Check research cost against company cash
-        const researchCost = parseFloat(tech.researchCost);
+        const researchCost = tech.researchCost;
         if (parseFloat(company.cash) < researchCost) {
           throw new Error("Insufficient funds for research");
         }
@@ -2286,8 +2288,8 @@ export const appRouter = router({
         // Create transaction
         await createTransaction({
           companyId: company.id,
-          type: "expense",
-          amount: tech.researchCost,
+          type: "other",
+          amount: researchCost.toFixed(2),
           description: `Research started: ${tech.name}`,
         });
 

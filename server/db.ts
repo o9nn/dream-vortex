@@ -657,7 +657,7 @@ export async function getAllTechnologies() {
   const db = await getDb();
   if (!db) return [];
 
-  return await db.select().from(technologies).orderBy(technologies.tier, technologies.name);
+  return await db.select().from(technologies).orderBy(technologies.category, technologies.name);
 }
 
 export async function getTechnologyById(id: number) {
@@ -703,9 +703,8 @@ export async function startTechnologyResearch(companyId: number, technologyId: n
   const result = await db.insert(companyTechnologies).values({
     companyId,
     technologyId,
-    researchProgress: "0.00",
-    researchStarted: new Date(),
-    isResearching: true,
+    researchProgress: 0,
+    isCompleted: false,
   });
 
   const created = await db
@@ -730,9 +729,9 @@ export async function updateTechnologyResearch(
   await db
     .update(companyTechnologies)
     .set({
-      researchProgress: Math.min(100, progress).toFixed(2),
-      isResearching: !isComplete,
-      researchCompleted: isComplete ? new Date() : null,
+      researchProgress: Math.min(100, progress),
+      isCompleted: isComplete,
+      completedAt: isComplete ? new Date() : null,
     })
     .where(and(
       eq(companyTechnologies.companyId, companyId),
@@ -750,7 +749,7 @@ export async function hasCompanyResearchedTech(companyId: number, technologyId: 
     .where(and(
       eq(companyTechnologies.companyId, companyId),
       eq(companyTechnologies.technologyId, technologyId),
-      sql`${companyTechnologies.researchProgress} >= 100`
+      eq(companyTechnologies.isCompleted, true)
     ))
     .limit(1);
 
@@ -778,10 +777,11 @@ export async function completeProductionItem(queueItemId: number) {
   if (!queueItem || !queueItem.recipe) return null;
 
   // Add output to inventory
+  const outputQuantity = parseFloat(queueItem.queue.quantity) * parseFloat(queueItem.recipe.outputQuantity);
   await upsertInventory({
     businessUnitId: queueItem.queue.businessUnitId,
     resourceTypeId: queueItem.recipe.outputResourceId,
-    quantity: parseFloat(queueItem.queue.quantity) * parseFloat(queueItem.recipe.outputQuantity),
+    quantity: outputQuantity.toFixed(4),
   });
 
   // Remove from queue
@@ -828,7 +828,7 @@ export async function processCompanyPayroll(companyId: number): Promise<{ totalP
   for (const unit of units) {
     const employeeData = await getEmployeesByUnit(unit.id);
     if (employeeData) {
-      const salary = parseFloat(employeeData.averageSalary) * employeeData.count;
+      const salary = parseFloat(employeeData.salary) * employeeData.count;
       totalPayroll += salary;
       employeeCount += employeeData.count;
     }
@@ -843,7 +843,7 @@ export async function processCompanyPayroll(companyId: number): Promise<{ totalP
     // Create transaction record
     await createTransaction({
       companyId,
-      type: "expense",
+      type: "salary",
       amount: totalPayroll.toFixed(2),
       description: `Payroll for ${employeeCount} employees`,
     });
@@ -901,8 +901,8 @@ export async function processTurnAdvancement(): Promise<{
   for (const company of allCompanies) {
     const companyTechs = await getCompanyTechnologies(company.id);
     for (const tech of companyTechs) {
-      if (tech.companyTech.isResearching) {
-        const currentProgress = parseFloat(tech.companyTech.researchProgress);
+      if (!tech.companyTech.isCompleted) {
+        const currentProgress = tech.companyTech.researchProgress;
         // Advance by 10% per turn (can be modified by research speed bonuses)
         const newProgress = currentProgress + 10;
         await updateTechnologyResearch(company.id, tech.companyTech.technologyId, newProgress);
